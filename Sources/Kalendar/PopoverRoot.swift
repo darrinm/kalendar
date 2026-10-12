@@ -262,11 +262,9 @@ private struct Toolbar: View {
                 Button("Go to Date…") { model.goToDate() }
                     .keyboardShortcut("t", modifiers: [.command, .shift])
                 Divider()
-                Button("Delete Item") {
-                    if let event = model.selectedEvent { model.delete(event) } else if let task = model.selectedTask { model.deleteTask(task) }
-                }
+                Button("Delete Item") { model.deleteSelection() }
                     .keyboardShortcut(.delete, modifiers: .command)
-                    .disabled(model.selectedEvent == nil && model.selectedTask == nil)
+                    .disabled(!model.hasSelection)
                 Divider()
                 Button("Refresh All") { model.refresh() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])

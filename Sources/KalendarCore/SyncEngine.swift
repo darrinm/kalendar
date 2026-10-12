@@ -241,23 +241,31 @@ public final class SyncEngine {
         let lists = try await pages(GoogleTasksAPI.ListsPage.self, for: account) {
             GoogleTasksAPI.listsRequest(pageToken: $0)
         }.flatMap { $0.lists(account: account) }
-        try cache.replaceTaskLists(lists, account: account)
-        for var list in try cache.taskLists() where list.account == account {
-            let started = now()
-            // a minute's overlap so a change saved while the last fetch ran is not missed
-            let since = list.syncedAt?.addingTimeInterval(-60)
-            let items = try await pages(GoogleTasksAPI.TasksPage.self, for: account) {
-                GoogleTasksAPI.tasksRequest(listId: list.id, updatedMin: since, pageToken: $0)
-            }.flatMap { $0.items ?? [] }
-            if !items.isEmpty {
-                try cache.applyTaskChanges(account: account, listId: list.id,
-                                           upserts: items.filter { $0.deleted != true }.map { $0.task(account: account, listId: list.id) },
-                                           deletedIds: Set(items.filter { $0.deleted == true }.map(\.id)))
-                wrote = true
+        let saved = try cache.replaceTaskLists(lists, account: account)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for list in saved {
+                group.addTask { try await self.syncTasks(in: list) }
             }
-            list.syncedAt = started
-            try cache.saveTaskList(list)
+            try await group.waitForAll()
         }
+    }
+
+    private func syncTasks(in list: TaskList) async throws {
+        var list = list
+        let started = now()
+        // a minute's overlap so a change saved while the last fetch ran is not missed
+        let since = list.syncedAt?.addingTimeInterval(-60)
+        let items = try await pages(GoogleTasksAPI.TasksPage.self, for: list.account) {
+            GoogleTasksAPI.tasksRequest(listId: list.id, updatedMin: since, pageToken: $0)
+        }.flatMap { $0.items ?? [] }
+        if !items.isEmpty {
+            try cache.applyTaskChanges(account: list.account, listId: list.id,
+                                       upserts: items.filter { $0.deleted != true }.map { $0.task(account: list.account, listId: list.id) },
+                                       deletedIds: Set(items.filter { $0.deleted == true }.map(\.id)))
+            wrote = true
+        }
+        list.syncedAt = started
+        try cache.saveTaskList(list)
     }
 
     /// Fetches the account's contacts when they are a day old or Refresh All asked (§18.4). A source

@@ -319,14 +319,16 @@ final class PopoverModel {
         agenda.selectedEvent = nil
     }
 
-    /// The list a new task goes to: the account's first list, else any.
-    func defaultTaskList(account: String?) -> TaskList? {
-        agenda.taskLists.first { $0.account == account } ?? agenda.taskLists.first
+    /// ⌫ and Delete Item: the selected event or task.
+    func deleteSelection() {
+        if let event = selectedEvent { delete(event) } else if let task = selectedTask { deleteTask(task) }
     }
+
+    var hasSelection: Bool { selectedEvent != nil || selectedTask != nil }
 
     /// Duplicate as Task (§7.1): due on the event's day, in the event account's first list.
     func duplicateAsTask(_ event: EventInstance) {
-        guard let list = defaultTaskList(account: event.account) else { return }
+        guard let list = agenda.defaultTaskList(account: event.account) else { return }
         writer.insertTask(title: event.summary, notes: event.notes, due: Calendar.current.startOfDay(for: event.start),
                           account: list.account, listId: list.id)
     }
@@ -334,8 +336,7 @@ final class PopoverModel {
     /// Duplicate as Event (§7.3): an all-day event on the due day (today when undated), on the
     /// primary calendar of the task's account.
     func duplicateAsEvent(_ task: TaskItem) {
-        let writable = agenda.calendars.filter(\.isWritable)
-        guard let calendar = writable.first(where: { $0.account == task.account && $0.primary }) ?? writable.first else { return }
+        guard let calendar = agenda.defaultCalendar(account: task.account) else { return }
         var draft = EventDraft(parsed: ParsedItem(title: task.title, allDayOn: task.due ?? agenda.today),
                                account: calendar.account, calendarId: calendar.id)
         draft.notes = task.notes ?? ""
@@ -402,8 +403,8 @@ final class PopoverModel {
         }
         // ⌫ / ⌘⌫ delete the selected event (§4.3)
         if input.isEmpty, !agenda.searchMode, event.keyCode == 51, flags.isEmpty || flags == [.command],
-           selectedEvent != nil || selectedTask != nil {
-            if let event = selectedEvent { delete(event) } else if let task = selectedTask { deleteTask(task) }
+           hasSelection {
+            deleteSelection()
             return true
         }
         guard input.isEmpty, !agenda.searchMode else { return false }

@@ -93,25 +93,16 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
             !wanted.contains($0) && (!Self.enabled || !$0.hasPrefix(Self.snoozePrefix))
         }
         center.removePendingNotificationRequests(withIdentifiers: stale)
-        let existing = Dictionary(pending.map { ($0.identifier, $0) }, uniquingKeysWith: { a, _ in a })
+        // an add with an existing identifier replaces that request
         for alert in planned {
-            let content = Self.content(for: alert.event)
-            // an unchanged request is left alone; re-adding one would reset nothing but costs a call
-            if let old = existing[alert.identifier], old.content.title == content.title, old.content.body == content.body,
-               old.content.categoryIdentifier == content.categoryIdentifier,
-               old.content.userInfo as NSDictionary == content.userInfo as NSDictionary,
-               (old.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() == alert.fireDate {
-                continue
-            }
             let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: alert.fireDate)
-            let request = UNNotificationRequest(identifier: alert.identifier, content: content,
+            let request = UNNotificationRequest(identifier: alert.identifier, content: Self.content(for: alert.event),
                                                 trigger: UNCalendarNotificationTrigger(dateMatching: parts, repeats: false))
             do { try await center.add(request) } catch {
                 Log.shell.error("alert not scheduled: \(error.localizedDescription)")
             }
         }
-        let count = await center.pendingNotificationRequests().count
-        Log.shell.info("alerts: \(planned.count) planned, \(stale.count) removed, \(count) pending")
+        Log.shell.info("alerts: \(planned.count) scheduled, \(stale.count) removed")
     }
 
     /// Title: the event's title. Body: "3:00 – 3:50 PM · Zoom" (§19).
@@ -150,7 +141,8 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
         let info = request.content.userInfo
         let action = response.actionIdentifier
         let url = (info["url"] as? String).flatMap(URL.init(string:))
-        let ids = (info["account"] as? String, info["calendarId"] as? String, info["eventId"] as? String)
+        let account = info["account"] as? String, calendarId = info["calendarId"] as? String
+        let eventId = info["eventId"] as? String
         let content = request.content
         let identifier = request.identifier
         await MainActor.run {
@@ -162,7 +154,7 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
                 center.add(UNNotificationRequest(identifier: base, content: content,
                                                  trigger: UNTimeIntervalNotificationTrigger(timeInterval: 300, repeats: false)))
             case UNNotificationDefaultActionIdentifier:
-                if let account = ids.0, let calendarId = ids.1, let eventId = ids.2,
+                if let account, let calendarId, let eventId,
                    let event = try? cache.event(account: account, calendarId: calendarId, id: eventId) {
                     openEvent(event)
                 }

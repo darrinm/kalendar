@@ -373,8 +373,9 @@ public final class CalendarCache: @unchecked Sendable {
     }
 
     /// Replaces the account's lists, keeping each surviving list's sync time; a list gone from
-    /// Google goes with its tasks.
-    public func replaceTaskLists(_ lists: [TaskList], account: String) throws {
+    /// Google goes with its tasks. Returns the lists as saved.
+    @discardableResult
+    public func replaceTaskLists(_ lists: [TaskList], account: String) throws -> [TaskList] {
         try db.write { db in
             let existing = Dictionary(uniqueKeysWithValues:
                 try TaskList.filter(Column("account") == account).fetchAll(db).map { ($0.id, $0) })
@@ -383,9 +384,11 @@ public final class CalendarCache: @unchecked Sendable {
                 try TaskItem.filter(Column("account") == account && Column("listId") == gone).deleteAll(db)
                 _ = try TaskList.deleteOne(db, key: ["account": account, "id": gone])
             }
-            for var l in lists {
+            return try lists.map { l in
+                var l = l
                 l.syncedAt = existing[l.id]?.syncedAt
                 try l.save(db)
+                return l
             }
         }
     }
@@ -476,10 +479,13 @@ public final class CalendarCache: @unchecked Sendable {
         }
     }
 
-    /// An insert landed: writes queued against its placeholder id now go to Google's id.
-    public func retargetQueued(from placeholder: String, to id: String) throws {
+    /// An insert landed: writes queued against the item it replaced on that calendar or list now go
+    /// to Google's id. (A cross-account move's delete of the original is on the other account.)
+    public func retargetQueued(account: String, calendarId: String, from placeholder: String, to id: String) throws {
+        guard placeholder != id else { return }
         try db.write { db in
-            for var w in try PendingWrite.filter(Column("eventId") == placeholder).fetchAll(db) {
+            for var w in try PendingWrite.filter(Column("account") == account && Column("calendarId") == calendarId
+                                                 && Column("eventId") == placeholder).fetchAll(db) {
                 w.eventId = id
                 w.path = w.path.replacingOccurrences(of: placeholder, with: id)
                 try w.update(db)

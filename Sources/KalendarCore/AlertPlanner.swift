@@ -6,7 +6,6 @@ public struct PlannedAlert: Equatable {
     /// event is gone is not planned again, so it is removed.
     public var identifier: String
     public var fireDate: Date
-    public var minutes: Int
     public var event: EventInstance
 }
 
@@ -16,10 +15,6 @@ public enum AlertPlanner {
     public static let limit = 64
     /// Google allows reminders up to four weeks before the start.
     public static let maxLead: TimeInterval = 4 * 7 * 86400
-
-    public static func identifier(calendarId: String, eventId: String, minutes: Int) -> String {
-        "\(calendarId)|\(eventId)|\(minutes)"
-    }
 
     /// The events whose alerts can fire within the horizon: those that start before it plus the
     /// longest lead time. The cache returns visible calendars only.
@@ -34,21 +29,19 @@ public enum AlertPlanner {
     /// reminders. An all-day event's start is local midnight, so its reminders count back from 00:00.
     public static func plan(events: [EventInstance], calendars: [String: CalendarInfo], now: Date,
                             limit: Int = limit) -> [PlannedAlert] {
-        struct Same: Hashable { var summary: String; var start: Date; var end: Date; var location: String? }
-        var seen = Set<Same>()
+        var seen = Set<EventInstance.DuplicateKey>()
         var result: [PlannedAlert] = []
         for e in events where !e.isDeclined {
             let minutes = e.reminders.useDefault
                 ? (e.allDay ? [] : calendars[e.calendarKey]?.defaultReminders ?? [])
                 : e.reminders.minutes
             guard !minutes.isEmpty,
-                  seen.insert(Same(summary: e.summary, start: e.start, end: e.end, location: e.location)).inserted
+                  seen.insert(e.duplicateKey).inserted
             else { continue }
             for m in Set(minutes) {
                 let fire = e.start.addingTimeInterval(-Double(m) * 60)
                 guard fire > now, fire <= now.addingTimeInterval(horizon) else { continue }
-                result.append(PlannedAlert(identifier: identifier(calendarId: e.calendarId, eventId: e.id, minutes: m),
-                                           fireDate: fire, minutes: m, event: e))
+                result.append(PlannedAlert(identifier: "\(e.calendarId)|\(e.id)|\(m)", fireDate: fire, event: e))
             }
         }
         return Array(result.sorted { ($0.fireDate, $0.identifier) < ($1.fireDate, $1.identifier) }.prefix(max(limit, 0)))

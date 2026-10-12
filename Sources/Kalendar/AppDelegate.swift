@@ -43,8 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             agenda.select(event.start)
             model.openEvent(event, anchor: nil)
         }
-        if !accounts.accounts.isEmpty { alerts.requestPermission() }
-        alerts.setNeedsReschedule()
+        // with an account, the reschedule follows the permission answer
+        if accounts.accounts.isEmpty { alerts.setNeedsReschedule() } else { alerts.requestPermission() }
         popover.onOpen = { [weak self] in self?.syncIfNeeded(maxAge: 30) }
         statusItem = StatusItemController(
             onToggle: { [weak self] in self?.togglePopover() },

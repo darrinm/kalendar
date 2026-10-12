@@ -128,9 +128,7 @@ public struct EventDraft: Equatable {
     /// Writing `date` clears `dateTime` and the reverse, so switching all-day on or off patches cleanly.
     static func time(_ date: Date, allDay: Bool, timeZone: String, calendar: Calendar) -> [String: Any] {
         if allDay {
-            let c = calendar.dateComponents([.year, .month, .day], from: date)
-            return ["date": String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!),
-                    "dateTime": NSNull(), "timeZone": NSNull()]
+            return ["date": GoogleCalendarAPI.ymd(date, calendar: calendar), "dateTime": NSNull(), "timeZone": NSNull()]
         }
         return ["dateTime": GoogleCalendarAPI.iso(date), "timeZone": timeZone, "date": NSNull()]
     }

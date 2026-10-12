@@ -95,6 +95,15 @@ public struct EventInstance: Codable, Equatable, Hashable, FetchableRecord, Pers
     /// The `CalendarInfo.key` of the event's calendar.
     public var calendarKey: String { "\(account)|\(calendarId)" }
     public var isDeclined: Bool { selfResponse == "declined" }
+
+    /// The same event on several calendars shows once and alerts once (§4.3, §19).
+    public struct DuplicateKey: Hashable {
+        var summary: String
+        var start: Date
+        var end: Date
+        var location: String?
+    }
+    public var duplicateKey: DuplicateKey { DuplicateKey(summary: summary, start: start, end: end, location: location) }
     /// The user's copy of someone else's event with guests: Kalendar can change only the user's
     /// own alerts, color and busy/free, and cannot restore it after a delete (§6, §8.2).
     public var isInvitation: Bool { !organizerSelf && !attendees.isEmpty }

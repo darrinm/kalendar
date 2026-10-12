@@ -70,8 +70,7 @@ final class NewItemModel {
            let match = writable.first(where: { $0.summary.lowercased().hasPrefix(q) }) {
             return match
         }
-        let firstAccount = accounts.accounts.first?.email
-        return writable.first { $0.account == firstAccount && $0.primary } ?? writable.first
+        return agenda.defaultCalendar(account: accounts.accounts.first?.email)
     }
 
     func update(input: String) {
@@ -123,13 +122,13 @@ final class NewItemModel {
         let lists = agenda.taskLists
         let q = parsed.calendarQuery?.lowercased() ?? ""
         guard let list = (q.isEmpty ? nil : lists.first { $0.title.lowercased().hasPrefix(q) })
-                ?? lists.first(where: { $0.account == accounts.accounts.first?.email }) ?? lists.first else { return }
+                ?? agenda.defaultTaskList(account: accounts.accounts.first?.email) else { return }
         let task = TaskItem(account: list.account, listId: list.id, id: "", title: parsed.title,
                             due: parsed.hasDate || defaultDay != nil ? Calendar.current.startOfDay(for: parsed.start) : nil)
         if let taskForm {
             taskForm.follow(task, timeIgnored: parsed.hasTime)
         } else {
-            taskForm = TaskEditorModel(newTask: task, timeIgnored: parsed.hasTime && task.due != nil, agenda: agenda, writer: writer)
+            taskForm = TaskEditorModel(task: task, isNew: true, timeIgnored: parsed.hasTime, agenda: agenda, writer: writer)
         }
     }
 

@@ -179,9 +179,8 @@ public final class EventWriter {
         Task { await flush() }
     }
 
-    /// A new item's id until Google's copy arrives. (A cross-account move caches under the old id.)
+    /// A new item's id until Google's copy arrives.
     static func placeholderId() -> String { "local-\(UUID().uuidString)" }
-    static func isPlaceholder(_ id: String) -> Bool { id.hasPrefix("local-") }
 
     /// Duplicate (§7.1): a copy of this occurrence on the same calendar, without its guests.
     public func duplicate(_ event: EventInstance) {
@@ -260,9 +259,8 @@ public final class EventWriter {
             if status == 429 || (500..<600).contains(status) { break }
             try? cache.removeWrite(id)
             changed = true
-            // 410 on a delete (404 from the Tasks API): already gone, which is what the delete wanted
-            let gone = status == 410 || (status == 404 && write.isTask)
-            let accepted = (200..<300).contains(status) || (gone && write.method == "DELETE")
+            // 404 or 410 on a delete: already gone, which is what the delete wanted
+            let accepted = (200..<300).contains(status) || (write.method == "DELETE" && (status == 404 || status == 410))
             switch status {
             case _ where accepted:
                 await landed(write, data: data)
@@ -321,7 +319,7 @@ public final class EventWriter {
         guard let g else { return }
         if let placeholder = write.replaces {
             try? cache.deleteEvent(account: write.account, calendarId: calendarId, id: placeholder)
-            if Self.isPlaceholder(placeholder) { try? cache.retargetQueued(from: placeholder, to: g.id) }
+            try? cache.retargetQueued(account: write.account, calendarId: calendarId, from: placeholder, to: g.id)
         }
         if g.isRecurringMaster {
             // an inserted series: its occurrences, not the master, belong in the cache
@@ -352,9 +350,10 @@ public final class EventWriter {
     }
 
     private func report(_ write: PendingWrite, _ reason: String?) {
-        let title = write.summary.isEmpty ? (write.isTask ? "the task" : "the event") : "“\(write.summary)”"
+        let (noun, service) = write.isTask ? ("the task", "Google Tasks") : ("the event", "Google Calendar")
+        let title = write.summary.isEmpty ? noun : "“\(write.summary)”"
         error = reason.map { "Couldn't save \(title): \($0)" }
-            ?? "\(title.prefix(1).uppercased() + title.dropFirst()) changed in \(write.isTask ? "Google Tasks" : "Google Calendar"), so your edit wasn't saved."
+            ?? "\(title.prefix(1).uppercased() + title.dropFirst()) changed in \(service), so your edit wasn't saved."
     }
 }
 

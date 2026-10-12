@@ -55,7 +55,7 @@ final class AgendaModel {
     var selectedEvent: String?
     private(set) var taskLists: [TaskList] = []
     /// The Tasks view (§10) replaces the grid and the agenda.
-    var showsTasks = false { didSet { if showsTasks { reloadTasks() } } }
+    var showsTasks = false { didSet { if showsTasks && !oldValue { reloadTasks() } } }
     var taskSort = TaskSort(rawValue: UserDefaults.standard.string(forKey: "taskSort") ?? "") ?? .dueDate {
         didSet {
             UserDefaults.standard.set(taskSort.rawValue, forKey: "taskSort")
@@ -206,17 +206,19 @@ final class AgendaModel {
     private func reloadTasks() {
         let all = ((try? cache.allTasks()) ?? []).filter { showCompletedTasks || !$0.completed }
         let keys = Set(all.map(\.key))
-        // a subtask whose parent is hidden (completed, say) shows as a top-level task
-        let parentKey = { (t: TaskItem) in t.parent.map { "\(t.listKey)|\($0)" }.flatMap { keys.contains($0) ? $0 : nil } }
-        let children = Dictionary(grouping: all.filter { parentKey($0) != nil }) { parentKey($0)! }
+        // by the parent's key; a subtask whose parent is hidden (completed, say) is a top-level task, under nil
+        let byParent = Dictionary(grouping: all) { (t: TaskItem) -> String? in
+            guard let parent = t.parent else { return nil }
+            let key = "\(t.listKey)|\(parent)"
+            return keys.contains(key) ? key : nil
+        }
         let order: (TaskItem, TaskItem) -> Bool = switch taskSort {
         // undated last; then title, so the order is stable
         case .dueDate: { ($0.due ?? .distantFuture, $0.title) < ($1.due ?? .distantFuture, $1.title) }
         case .myOrder: { ($0.listKey, $0.position) < ($1.listKey, $1.position) }
         }
-        let roots = all.filter { parentKey($0) == nil }
-        taskRows = roots.sorted(by: order).flatMap { root in
-            [(root, 0)] + (children[root.key] ?? []).sorted { $0.position < $1.position }.map { ($0, 1) }
+        taskRows = (byParent[nil] ?? []).sorted(by: order).flatMap { root in
+            [(root, 0)] + (byParent[root.key] ?? []).sorted { $0.position < $1.position }.map { ($0, 1) }
         }
     }
 
@@ -237,19 +239,10 @@ final class AgendaModel {
         }
     }
 
-    private struct DuplicateKey: Hashable {
-        var summary: String
-        var start: Date
-        var end: Date
-        var location: String?
-    }
-
     private func section(for day: Date, events: [EventInstance]) -> DaySection {
         // "Show declined events" is off (§2); identical events on several calendars show once (§4.3)
-        var seen = Set<DuplicateKey>()
-        let shown = events.filter { e in
-            !e.isDeclined && seen.insert(DuplicateKey(summary: e.summary, start: e.start, end: e.end, location: e.location)).inserted
-        }
+        var seen = Set<EventInstance.DuplicateKey>()
+        let shown = events.filter { !$0.isDeclined && seen.insert($0.duplicateKey).inserted }
         return DaySection(day: day, allDay: shown.filter(\.allDay), timed: shown.filter { !$0.allDay })
     }
 
@@ -287,6 +280,17 @@ final class AgendaModel {
     func calendar(forKey key: String) -> CalendarInfo? { calendarsByKey[key] }
 
     func taskList(forKey key: String) -> TaskList? { taskLists.first { $0.key == key } }
+
+    /// Where a new task goes: the account's first list, else any.
+    func defaultTaskList(account: String?) -> TaskList? {
+        taskLists.first { $0.account == account } ?? taskLists.first
+    }
+
+    /// Where a new event goes: the account's primary calendar, else any writable one.
+    func defaultCalendar(account: String?) -> CalendarInfo? {
+        let writable = calendars.filter(\.isWritable)
+        return writable.first { $0.account == account && $0.primary } ?? writable.first
+    }
 
     func calendarName(for event: EventInstance) -> String {
         calendarsByKey[event.calendarKey]?.summary ?? event.calendarId

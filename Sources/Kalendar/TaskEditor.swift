@@ -16,23 +16,19 @@ final class TaskEditorModel {
     var draft: TaskItem
     /// The input named a time, which Google Tasks can't store (§5.1).
     private(set) var timeIgnored = false
+    /// The list menu's choices: every list for a new task; for an existing one, its own list and
+    /// the lists it can move to.
+    let lists: [TaskList]
 
-    init(task: TaskItem, agenda: AgendaModel, writer: EventWriter) {
-        isNew = false
+    init(task: TaskItem, isNew: Bool = false, timeIgnored: Bool = false, agenda: AgendaModel, writer: EventWriter) {
+        self.isNew = isNew
         original = task
         draft = task
+        self.timeIgnored = timeIgnored && task.due != nil
         self.agenda = agenda
         self.writer = writer
-        writer.clearError()
-    }
-
-    init(newTask task: TaskItem, timeIgnored: Bool, agenda: AgendaModel, writer: EventWriter) {
-        isNew = true
-        original = task
-        draft = task
-        self.timeIgnored = timeIgnored
-        self.agenda = agenda
-        self.writer = writer
+        let destinations = isNew ? [] : Set(writer.destinations(for: task, among: agenda.taskLists).map(\.key))
+        lists = agenda.taskLists.filter { isNew || $0.key == task.listKey || destinations.contains($0.key) }
         writer.clearError()
     }
 
@@ -136,21 +132,30 @@ private struct TaskListMenu: View {
     let model: TaskEditorModel
 
     var body: some View {
-        let lists = model.agenda.taskLists.filter { model.isNew || model.writer.canMove(model.original, to: $0) }
-        let byAccount = Dictionary(grouping: lists, by: \.account)
         Menu {
-            ForEach(byAccount.keys.sorted(), id: \.self) { account in
-                Section(account) {
-                    ForEach(byAccount[account]!, id: \.key) { list in
-                        Button(list.title) { model.setList(list) }
-                    }
-                }
-            }
+            TaskListSections(lists: model.lists, pick: model.setList)
         } label: {
             Text(model.agenda.taskList(forKey: model.draft.listKey)?.title ?? "Tasks")
         }
         .fixedSize()
-        .disabled(lists.isEmpty)
+        .disabled(model.lists.isEmpty)
+    }
+}
+
+/// Task lists grouped by account (§5.1).
+private struct TaskListSections: View {
+    let lists: [TaskList]
+    let pick: (TaskList) -> Void
+
+    var body: some View {
+        let byAccount = Dictionary(grouping: lists, by: \.account)
+        ForEach(byAccount.keys.sorted(), id: \.self) { account in
+            Section(account) {
+                ForEach(byAccount[account]!, id: \.key) { list in
+                    Button(list.title) { pick(list) }
+                }
+            }
+        }
     }
 }
 
@@ -224,19 +229,11 @@ struct TaskContextMenu: View {
 
     var body: some View {
         Button(task.completed ? "Uncomplete" : "Complete") { actions.writer.setCompleted(task, !task.completed) }
-        let byAccount = Dictionary(grouping: actions.agenda.taskLists.filter {
-            $0.key != task.listKey && actions.writer.canMove(task, to: $0)
-        }, by: \.account)
+        let destinations = actions.writer.destinations(for: task, among: actions.agenda.taskLists)
         Menu("Move to List") {
-            ForEach(byAccount.keys.sorted(), id: \.self) { account in
-                Section(account) {
-                    ForEach(byAccount[account]!, id: \.key) { list in
-                        Button(list.title) { actions.writer.move(task, to: list) }
-                    }
-                }
-            }
+            TaskListSections(lists: destinations) { actions.writer.move(task, to: $0) }
         }
-        .disabled(byAccount.isEmpty)
+        .disabled(destinations.isEmpty)
         Divider()
         Button("Duplicate as Event") { actions.duplicateAsEvent(task) }
         Button("Delete") { actions.deleteTask(task) }

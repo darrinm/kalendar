@@ -5,7 +5,7 @@ import Foundation
 import Security
 
 public enum Keychain {
-    private static let service = "com.massena.kalendar"
+    private static let service = Log.subsystem
 
     private static func query(_ account: String) -> [String: Any] {
         [
@@ -15,12 +15,11 @@ public enum Keychain {
         ]
     }
 
-    /// Stores `value`, or deletes the item when `value` is nil or empty.
-    @discardableResult
-    public static func set(_ value: String?, for account: String) -> Bool {
+    /// Stores `value`, or deletes the item when `value` is nil or empty. Failures are logged.
+    public static func set(_ value: String?, for account: String) {
         guard let value, !value.isEmpty, let data = value.data(using: .utf8) else {
-            let status = SecItemDelete(query(account) as CFDictionary)
-            return status == errSecSuccess || status == errSecItemNotFound
+            SecItemDelete(query(account) as CFDictionary)
+            return
         }
         // Update in place rather than delete-then-add, so a failed add never loses the old token.
         let update = [kSecValueData as String: data] as CFDictionary
@@ -33,7 +32,6 @@ public enum Keychain {
             status = SecItemAdd(add as CFDictionary, nil)
         }
         if status != errSecSuccess { Log.auth.error("keychain write failed for \(account): \(status)") }
-        return status == errSecSuccess
     }
 
     /// A failed read other than "no such item", such as a locked keychain or a denied access prompt.

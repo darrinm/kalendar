@@ -27,7 +27,6 @@ build_out=$(/usr/bin/xcrun swift build -c release -Xswiftc -warnings-as-errors \
 }
 printf '%s\n' "$build_out" | grep -vE "unhandled Platform key" || true
 BIN=.build/release/Kalendar
-[ -f "$BIN" ] || { echo "build failed"; exit 1; }
 
 APP=dist/Kalendar.app
 rm -rf "$APP"

@@ -14,16 +14,14 @@ final class PopoverController: NSObject, NSPopoverDelegate {
 
     private let popover = NSPopover()
     private var detail: NSPopover?
-    /// When the popover last closed. A transient popover closes on mouse-down outside itself, which
-    /// includes the status item; the status item's action then fires on mouse-up and would reopen it.
-    private var closedAt = Date.distantPast
+    /// The status item button the popover is shown from.
+    private weak var anchor: NSStatusBarButton?
     private let model: PopoverModel
 
     init(accounts: AccountStore, signIn: @escaping (String?) -> Void, showSettings: @escaping () -> Void) {
         model = PopoverModel(accounts: accounts, signIn: signIn, showSettings: showSettings)
         super.init()
         popover.behavior = .transient
-        popover.animates = true
         popover.contentSize = Self.size
         popover.delegate = self
         model.close = { [weak self] in self?.close() }
@@ -31,17 +29,15 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         popover.contentViewController = NSHostingController(rootView: PopoverRoot(model: model))
     }
 
-    var isShown: Bool { popover.isShown }
-
     func toggle(relativeTo button: NSStatusBarButton) {
         if popover.isShown {
             close()
             return
         }
-        if NSApp.currentEvent?.type == .leftMouseUp, Date().timeIntervalSince(closedAt) < 0.5 { return }
         // An accessory app is not active until told to be; without this the text field cannot
         // become first responder when the popover opens from the global hotkey.
         NSApp.activate(ignoringOtherApps: true)
+        anchor = button
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         model.focusInput()
@@ -56,16 +52,23 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         detail?.close()
         let child = NSPopover()
         child.behavior = .transient
-        child.animates = true
         child.contentViewController = NSHostingController(rootView: content.frame(width: 300))
         // to the left of the Mini Window (§6); AppKit flips it to the right when there is no room
         child.show(relativeTo: view.bounds, of: view, preferredEdge: .minX)
         detail = child
     }
 
+    /// A transient popover closes on mouse-down outside itself. For a mouse-down on the status item,
+    /// stay open: the item's action fires on mouse-up and `toggle` closes the popover then. Closing
+    /// here as well would let that mouse-up reopen it.
+    func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        guard popover === self.popover, let window = anchor?.window,
+              let event = NSApp.currentEvent, event.type == .leftMouseDown else { return true }
+        return event.window !== window
+    }
+
     func popoverDidClose(_ notification: Notification) {
         if (notification.object as? NSPopover) === popover {
-            closedAt = Date()
             detail?.close()
             detail = nil
         }

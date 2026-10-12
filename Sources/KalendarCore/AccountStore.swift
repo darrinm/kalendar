@@ -57,8 +57,7 @@ public final class AccountStore {
     }
 
     /// Exchanges an authorization code for tokens and adds (or re-authorizes) the account.
-    @discardableResult
-    public func completeSignIn(code: String, pkce: GoogleOAuth.PKCE) async throws -> Account {
+    public func completeSignIn(code: String, pkce: GoogleOAuth.PKCE) async throws {
         let response = try await send(GoogleOAuth.tokenRequest(code: code, pkce: pkce))
         let missing = GoogleOAuth.missingRequiredScopes(response.grantedScopes)
         guard missing.isEmpty else {
@@ -71,7 +70,7 @@ public final class AccountStore {
         }
         guard let refresh = response.refreshToken else { throw GoogleOAuth.Error.malformedResponse }
         vault.setRefreshToken(refresh, for: email)
-        accessTokens[email] = (response.accessToken, now().addingTimeInterval(response.expiresIn))
+        cacheAccessToken(response, for: email)
         let account = Account(email: email, needsReauth: false)
         if let i = accounts.firstIndex(where: { $0.email == email }) {
             accounts[i] = account
@@ -80,7 +79,6 @@ public final class AccountStore {
         }
         persist()
         Log.auth.info("signed in \(email, privacy: .private)")
-        return account
     }
 
     /// A valid access token, refreshed when it expires within a minute.
@@ -103,7 +101,7 @@ public final class AccountStore {
         }
         do {
             let response = try await send(GoogleOAuth.refreshRequest(refreshToken: refresh))
-            accessTokens[email] = (response.accessToken, now().addingTimeInterval(response.expiresIn))
+            cacheAccessToken(response, for: email)
             return response.accessToken
         } catch GoogleOAuth.Error.invalidGrant {
             markNeedsReauth(email)
@@ -130,19 +128,29 @@ public final class AccountStore {
         persist()
     }
 
-    /// Sends a Google API request made with `accessToken(for:)`. A 401 means Google no longer accepts
-    /// the cached access token, so it is discarded and the next call refreshes it.
-    func sendAuthorized(_ request: URLRequest, for email: String) async throws -> (Data, Int) {
-        let (data, response) = try await transport(request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if status == 401 { accessTokens[email] = nil }
-        return (data, status)
+    /// Sends a Google API request built by `make` with the account's access token. A 401 means
+    /// Google no longer accepts that token (for example, access was revoked at
+    /// myaccount.google.com), so it is discarded and the request is retried once with a fresh one;
+    /// a dead refresh token then surfaces as `invalidGrant`.
+    func sendAuthorized(for email: String, _ make: (String) -> URLRequest) async throws -> (Data, Int) {
+        let (data, status) = try await perform(make(try await accessToken(for: email)))
+        guard status == 401 else { return (data, status) }
+        accessTokens[email] = nil
+        return try await perform(make(try await accessToken(for: email)))
     }
 
     private func send(_ request: URLRequest) async throws -> GoogleOAuth.TokenResponse {
-        let (data, response) = try await transport(request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let (data, status) = try await perform(request)
         return try GoogleOAuth.parseTokenResponse(data: data, status: status)
+    }
+
+    private func perform(_ request: URLRequest) async throws -> (Data, Int) {
+        let (data, response) = try await transport(request)
+        return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+
+    private func cacheAccessToken(_ response: GoogleOAuth.TokenResponse, for email: String) {
+        accessTokens[email] = (response.accessToken, now().addingTimeInterval(response.expiresIn))
     }
 
     private func persist() {

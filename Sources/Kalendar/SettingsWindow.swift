@@ -58,18 +58,15 @@ private struct GeneralSettings: View {
 
     var body: some View {
         Form {
-            Toggle("Launch at login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) { _, enabled in
-                    // the line below writes launchAtLogin back, which calls this again
-                    guard enabled != LaunchAtLogin.isEnabled else { return }
-                    LaunchAtLogin.set(enabled)
-                    launchAtLogin = LaunchAtLogin.isEnabled
-                }
+            // reads back the actual state, which can differ from the request (approval pending)
+            Toggle("Launch at login", isOn: Binding(
+                get: { launchAtLogin },
+                set: { LaunchAtLogin.set($0); launchAtLogin = LaunchAtLogin.isEnabled }))
             Toggle("Show alerts", isOn: $showAlerts)
-            Toggle("Check for updates automatically", isOn: $automaticUpdates)
-                .onChange(of: automaticUpdates) { _, enabled in
-                    UpdaterController.shared.automaticallyChecks = enabled
-                }
+            Toggle("Check for updates automatically", isOn: Binding(
+                get: { automaticUpdates },
+                set: { UpdaterController.shared.automaticallyChecks = $0; automaticUpdates = $0 }))
+                .disabled(!UpdaterController.shared.isAvailable)
         }
         .formStyle(.grouped)
     }
@@ -118,12 +115,7 @@ private struct AccountSettingsRow: View {
         .task(id: account) {
             guard !account.needsReauth else { return }
             status = "Checking…"
-            do {
-                let n = try await accounts.calendars(for: account.email).count
-                status = n == 1 ? "1 calendar" : "\(n) calendars"
-            } catch {
-                status = error.localizedDescription
-            }
+            status = await accounts.calendarCountText(for: account.email)
         }
     }
 }

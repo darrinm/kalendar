@@ -13,17 +13,13 @@ final class HotkeyCenter {
     var handler: (() -> Void)?
     private var ref: EventHotKeyRef?
 
-    /// ⌃⌥Space
-    private let keyCode = UInt32(kVK_Space)
-    private let modifiers = UInt32(controlKey | optionKey)
-
     func install() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: OSType(kEventHotKeyPressed))
         InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
             DispatchQueue.main.async { HotkeyCenter.shared.handler?() }
             return noErr
         }, 1, &spec, nil, nil)
-        let status = RegisterEventHotKey(keyCode, modifiers,
+        let status = RegisterEventHotKey(UInt32(kVK_Space), UInt32(controlKey | optionKey),
                                          EventHotKeyID(signature: OSType(0x4B4C4E44), id: 1),   // 'KLND'
                                          GetApplicationEventTarget(), 0, &ref)
         if status != noErr { Log.shell.error("hotkey register failed: \(status)") }

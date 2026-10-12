@@ -1,6 +1,5 @@
 import AppKit
 import KalendarCore
-import ServiceManagement
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {

@@ -19,12 +19,17 @@ final class StatusItemController: NSObject {
         button.action = #selector(clicked)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         redraw()
-        // the day number changes at midnight, and when the clock or time zone changes
-        for name in [Notification.Name.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
-            NotificationCenter.default.addObserver(self, selector: #selector(redraw), name: name, object: nil)
+        // the day number changes at midnight, when the clock or time zone changes, and across sleep
+        let centers: [(NotificationCenter, Notification.Name)] = [
+            (.default, .NSCalendarDayChanged), (.default, .NSSystemClockDidChange),
+            (.default, .NSSystemTimeZoneDidChange), (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification),
+        ]
+        for (center, name) in centers {
+            // queue: .main because NSCalendarDayChanged is posted on an arbitrary thread
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.redraw() }
+            }
         }
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self, selector: #selector(redraw), name: NSWorkspace.didWakeNotification, object: nil)
     }
 
     @objc private func clicked() {
@@ -39,13 +44,10 @@ final class StatusItemController: NSObject {
         }
     }
 
-    @objc private func redraw() {
-        // NSCalendarDayChanged arrives on an arbitrary thread
-        DispatchQueue.main.async { [self] in
-            let day = Calendar.current.component(.day, from: Date())
-            item.button?.image = Self.glyph(day: day)
-            item.button?.setAccessibilityLabel("Kalendar, \(Date().formatted(date: .complete, time: .omitted))")
-        }
+    private func redraw() {
+        let day = Calendar.current.component(.day, from: Date())
+        item.button?.image = Self.glyph(day: day)
+        item.button?.setAccessibilityLabel("Kalendar, \(Date().formatted(date: .complete, time: .omitted))")
     }
 
     /// An outlined calendar page with a solid header bar and the day number, drawn as a template

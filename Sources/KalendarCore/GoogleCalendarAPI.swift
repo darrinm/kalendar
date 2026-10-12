@@ -31,8 +31,18 @@ public enum GoogleCalendarAPI {
 
 extension AccountStore {
     public func calendars(for email: String) async throws -> [GoogleCalendarAPI.CalendarSummary] {
-        let token = try await accessToken(for: email)
-        let (data, status) = try await sendAuthorized(GoogleCalendarAPI.calendarListRequest(accessToken: token), for: email)
+        let (data, status) = try await sendAuthorized(for: email, GoogleCalendarAPI.calendarListRequest)
         return try GoogleCalendarAPI.parseCalendarList(data: data, status: status)
+    }
+
+    /// "3 calendars", or why the list couldn't be loaded. Settings › Accounts and the account detail
+    /// popover show this until milestone 2 replaces it with synced data.
+    public func calendarCountText(for email: String) async -> String {
+        do {
+            let n = try await calendars(for: email).count
+            return n == 1 ? "1 calendar" : "\(n) calendars"
+        } catch {
+            return "Couldn't load calendars: \(error.localizedDescription)"
+        }
     }
 }

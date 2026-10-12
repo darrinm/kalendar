@@ -150,14 +150,7 @@ private struct AccountDetail: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task {
-            do {
-                let list = try await model.accounts.calendars(for: email)
-                calendars = list.count == 1 ? "1 calendar" : "\(list.count) calendars"
-            } catch {
-                calendars = "Couldn't load calendars: \(error.localizedDescription)"
-            }
-        }
+        .task { calendars = await model.accounts.calendarCountText(for: email) }
     }
 }
 

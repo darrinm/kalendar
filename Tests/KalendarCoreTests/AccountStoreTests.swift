@@ -46,6 +46,12 @@ final class AccountStoreTests: XCTestCase {
                             now: { [unowned self] in clock })
     }
 
+    private let refreshJSON = #"{"access_token":"at2","expires_in":3600}"#
+
+    private func signIn(_ store: AccountStore) async throws {
+        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+    }
+
     private func tokenJSON(email: String, scope: String? = nil, refresh: Bool = true) -> String {
         let scopes = scope ?? (["openid"] + GoogleOAuth.requiredScopes).joined(separator: " ")
         let refreshField = refresh ? #""refresh_token":"rt-\#(email)","# : ""
@@ -55,7 +61,7 @@ final class AccountStoreTests: XCTestCase {
     func testSignInStoresAccountAndToken() async throws {
         transport.responses = [(200, tokenJSON(email: "a@example.com"))]
         let store = makeStore()
-        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+        try await signIn(store)
         XCTAssertEqual(store.accounts.map(\.email), ["a@example.com"])
         XCTAssertEqual(vault.tokens["a@example.com"], "rt-a@example.com")
         // persisted: a new store sees the same account
@@ -66,7 +72,7 @@ final class AccountStoreTests: XCTestCase {
         transport.responses = [(200, tokenJSON(email: "a@example.com", scope: "openid https://www.googleapis.com/auth/tasks"))]
         let store = makeStore()
         do {
-            try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+            try await signIn(store)
             XCTFail("expected missingScopes")
         } catch {
             XCTAssertEqual(error as? GoogleOAuth.Error, .missingScopes(["https://www.googleapis.com/auth/calendar"]))
@@ -78,9 +84,9 @@ final class AccountStoreTests: XCTestCase {
 
     func testAccessTokenIsCachedThenRefreshed() async throws {
         transport.responses = [(200, tokenJSON(email: "a@example.com")),
-                               (200, #"{"access_token":"at2","expires_in":3600}"#)]
+                               (200, refreshJSON)]
         let store = makeStore()
-        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+        try await signIn(store)
         let first = try await store.accessToken(for: "a@example.com")
         XCTAssertEqual(first, "at1")
         XCTAssertEqual(transport.sent.count, 1)
@@ -94,9 +100,9 @@ final class AccountStoreTests: XCTestCase {
 
     func testConcurrentCallersShareOneRefresh() async throws {
         transport.responses = [(200, tokenJSON(email: "a@example.com")),
-                               (200, #"{"access_token":"at2","expires_in":3600}"#)]
+                               (200, refreshJSON)]
         let store = makeStore()
-        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+        try await signIn(store)
         clock += 4000
         async let first = store.accessToken(for: "a@example.com")
         async let second = store.accessToken(for: "a@example.com")
@@ -105,27 +111,41 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertEqual(transport.sent.count, 2)   // the sign-in and one refresh
     }
 
-    func testCalendarList401DiscardsCachedAccessToken() async throws {
+    /// A revoked grant shows up first as a 401 on an API call. The call refreshes and retries once.
+    func testCalendarList401RefreshesAndRetries() async throws {
         transport.responses = [(200, tokenJSON(email: "a@example.com")),
                                (401, "{}"),
-                               (200, #"{"access_token":"at2","expires_in":3600}"#),
+                               (200, refreshJSON),
                                (200, #"{"items":[{"id":"1","summary":"A","accessRole":"owner"}]}"#)]
         let store = makeStore()
-        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
-        do {
-            _ = try await store.calendars(for: "a@example.com")
-            XCTFail("expected an error")
-        } catch {}
+        try await signIn(store)
         let calendars = try await store.calendars(for: "a@example.com")
         XCTAssertEqual(calendars.map(\.id), ["1"])
+        XCTAssertEqual(transport.sent[1].value(forHTTPHeaderField: "Authorization"), "Bearer at1")
         XCTAssertEqual(transport.sent[3].value(forHTTPHeaderField: "Authorization"), "Bearer at2")
+    }
+
+    func testCalendarList401WithRevokedGrantMarksNeedsReauth() async throws {
+        transport.responses = [(200, tokenJSON(email: "a@example.com")),
+                               (401, "{}"),
+                               (400, #"{"error":"invalid_grant"}"#)]
+        let store = makeStore()
+        try await signIn(store)
+        do {
+            _ = try await store.calendars(for: "a@example.com")
+            XCTFail("expected invalidGrant")
+        } catch {
+            XCTAssertEqual(error as? GoogleOAuth.Error, .invalidGrant)
+        }
+        XCTAssertEqual(store.accounts.first?.needsReauth, true)
+        XCTAssertEqual(transport.sent.count, 3)
     }
 
     func testRevokedRefreshTokenMarksNeedsReauth() async throws {
         transport.responses = [(200, tokenJSON(email: "a@example.com")),
                                (400, #"{"error":"invalid_grant"}"#)]
         let store = makeStore()
-        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+        try await signIn(store)
         clock += 4000
         do {
             _ = try await store.accessToken(for: "a@example.com")
@@ -138,7 +158,7 @@ final class AccountStoreTests: XCTestCase {
 
         // signing in again clears it
         transport.responses = [(200, tokenJSON(email: "a@example.com"))]
-        try await store.completeSignIn(code: "c2", pkce: .init(verifier: "v"))
+        try await signIn(store)
         XCTAssertEqual(store.accounts.first?.needsReauth, false)
         XCTAssertEqual(store.accounts.count, 1)
     }
@@ -146,8 +166,8 @@ final class AccountStoreTests: XCTestCase {
     func testSignOutRevokesAndForgets() async throws {
         transport.responses = [(200, tokenJSON(email: "a@example.com")), (200, tokenJSON(email: "b@example.com"))]
         let store = makeStore()
-        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
-        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+        try await signIn(store)
+        try await signIn(store)
         await store.signOut("a@example.com")
         XCTAssertEqual(store.accounts.map(\.email), ["b@example.com"])
         XCTAssertNil(vault.tokens["a@example.com"])
@@ -159,7 +179,7 @@ final class AccountStoreTests: XCTestCase {
     func testKeychainReadErrorDoesNotMarkNeedsReauth() async throws {
         transport.responses = [(200, tokenJSON(email: "a@example.com"))]
         let store = makeStore()
-        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+        try await signIn(store)
         clock += 4000
         vault.readError = Keychain.ReadError(status: errSecInteractionNotAllowed)
         do {

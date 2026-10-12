@@ -37,18 +37,15 @@ final class UpdaterController {
         controller.checkForUpdates(nil)
     }
 
+    /// False in a build without an updater; Settings disables the automatic-checks toggle then.
+    var isAvailable: Bool { controller != nil }
+
     /// Set through Sparkle, not the SUEnableAutomaticChecks user default, so the change reschedules
     /// the running updater instead of waiting for the next launch.
     var automaticallyChecks: Bool {
-        get { controller?.updater.automaticallyChecksForUpdates
-              ?? (UserDefaults.standard.object(forKey: Self.automaticChecksKey) as? Bool ?? true) }
-        set {
-            if let controller { controller.updater.automaticallyChecksForUpdates = newValue }
-            else { UserDefaults.standard.set(newValue, forKey: Self.automaticChecksKey) }
-        }
+        get { controller?.updater.automaticallyChecksForUpdates ?? false }
+        set { controller?.updater.automaticallyChecksForUpdates = newValue }
     }
-
-    private static let automaticChecksKey = "SUEnableAutomaticChecks"
 
     /// Menu validation: Sparkle refuses a check while one is already running.
     var canCheckNow: Bool { controller?.updater.canCheckForUpdates ?? true }

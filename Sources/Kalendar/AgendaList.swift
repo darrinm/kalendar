@@ -8,7 +8,7 @@ struct AgendaList: View {
     let sections: [DaySection]
     /// Search results end; the agenda grows when its last section appears.
     let extendsAtEnd: Bool
-    let onOpen: (EventInstance, NSView) -> Void
+    let actions: PopoverModel
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -26,7 +26,7 @@ struct AgendaList: View {
                             ForEach(section.timed, id: \.key) { event in
                                 EventRow(event: event, model: model, now: context.date,
                                          isSelected: model.selectedEvent == event.key,
-                                         showsJoin: event.key == join, onOpen: onOpen)
+                                         showsJoin: event.key == join, actions: actions)
                             }
                             if section.isEmpty {
                                 Text("No events")
@@ -100,7 +100,7 @@ private struct EventRow: View {
     let now: Date
     let isSelected: Bool
     let showsJoin: Bool
-    let onOpen: (EventInstance, NSView) -> Void
+    let actions: PopoverModel
     @State private var anchor: NSView?
 
     var body: some View {
@@ -147,8 +147,9 @@ private struct EventRow: View {
         .background(AnchorView(view: $anchor))
         .onTapGesture {
             model.selectedEvent = event.key
-            if let anchor { onOpen(event, anchor) }
+            actions.openEvent(event, anchor: anchor)
         }
+        .contextMenu { EventContextMenu(event: event, actions: actions) }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
     }
@@ -161,6 +162,46 @@ private struct EventRow: View {
         } else {
             Circle().fill(color).frame(width: 8, height: 8)
         }
+    }
+}
+
+/// Right-click on an event row (§7.1).
+private struct EventContextMenu: View {
+    let event: EventInstance
+    let actions: PopoverModel
+
+    var body: some View {
+        if event.recurringEventId != nil {
+            Button("Go to Previous Occurrence") { actions.goToOccurrence(of: event, forward: false) }
+            Button("Go to Next Occurrence") { actions.goToOccurrence(of: event, forward: true) }
+            Divider()
+        }
+        if let link = event.conferenceURL, let url = URL(string: link) {
+            Button("Join \(ConferenceDetector.serviceName(for: link)) Meeting") { NSWorkspace.shared.open(url) }
+            Divider()
+        }
+        Menu("Color") {
+            Button("None") { actions.quickEdit(event) { $0.colorId = nil } }
+            ForEach((1...11).map(String.init), id: \.self) { id in
+                Button(ColorMenu.names[id]!) { actions.quickEdit(event) { $0.colorId = id } }
+            }
+        }
+        Menu("Show As") {
+            Button("Busy") { actions.quickEdit(event) { $0.busy = true } }
+            Button("Free") { actions.quickEdit(event) { $0.busy = false } }
+        }
+        if event.organizerSelf || event.attendees.isEmpty {
+            Menu("Visibility") {
+                ForEach(["default", "public", "private", "confidential"], id: \.self) { v in
+                    Button(v.capitalized) { actions.quickEdit(event) { $0.visibility = v } }
+                }
+            }
+        }
+        Divider()
+        Button("Copy") { actions.copy(event) }
+        Button("Duplicate") { actions.writer.duplicate(event) }
+        Button("Duplicate as Task") {}.disabled(true)
+        Button("Delete") { actions.delete(event) }
     }
 }
 

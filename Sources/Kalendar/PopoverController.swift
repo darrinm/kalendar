@@ -28,7 +28,9 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         popover.contentSize = Self.size
         popover.delegate = self
         model.close = { [weak self] in self?.close() }
-        model.showChild = { [weak self] view, content, width in self?.showChild(relativeTo: view, content: content, width: width) }
+        model.showChild = { [weak self] view, content, width, edge, editor in
+            self?.showChild(relativeTo: view, content: content, width: width, edge: edge, editor: editor) ?? false
+        }
         model.contentView = { [weak self] in self?.popover.contentViewController?.view }
         popover.contentViewController = NSHostingController(rootView: PopoverRoot(model: model))
     }
@@ -54,19 +56,36 @@ final class PopoverController: NSObject, NSPopoverDelegate {
     }
 
     func close() {
-        detail?.close()
         popover.performClose(nil)
     }
 
-    private func showChild(relativeTo view: NSView, content: AnyView, width: CGFloat) {
+    /// The open child popover's editor, if it is an event's detail popover.
+    private var editor: EventEditorModel?
+
+    /// Closes the open child popover, saving an event's edits first. False when the user cancelled
+    /// the recurring-event question (§8.1), so everything stays open.
+    private func closeChild() -> Bool {
+        if let editor, !editor.shouldClose() { return false }
+        editor = nil
         detail?.close()
+        detail = nil
+        return true
+    }
+
+    @discardableResult
+    private func showChild(relativeTo view: NSView, content: AnyView, width: CGFloat, edge: NSRectEdge,
+                           editor: EventEditorModel?) -> Bool {
+        guard closeChild() else { return false }
         let child = NSPopover()
         child.behavior = .transient
+        child.delegate = self
         child.contentViewController = NSHostingController(rootView: content.frame(width: width))
-        // to the left of the Mini Window (§6); AppKit flips it to the right when there is no room
-        child.show(relativeTo: view.bounds, of: view, preferredEdge: .minX)
+        // AppKit flips to the opposite edge when there is no room
+        child.show(relativeTo: view.bounds, of: view, preferredEdge: edge)
         Self.paintFrame(of: child)
         detail = child
+        self.editor = editor
+        return true
     }
 
     /// NSPopover draws its own frame, arrow included, in the system popover material. Putting a
@@ -84,15 +103,27 @@ final class PopoverController: NSObject, NSPopoverDelegate {
     /// stay open: the item's action fires on mouse-up and `toggle` closes the popover then. Closing
     /// here as well would let that mouse-up reopen it.
     func popoverShouldClose(_ popover: NSPopover) -> Bool {
-        guard popover === self.popover, let window = anchor?.window,
-              let event = NSApp.currentEvent, event.type == .leftMouseDown else { return true }
-        return event.window !== window
+        // the detail popover saves on close (§6) and may ask about a recurring event first
+        if popover === detail {
+            guard editor?.shouldClose() ?? true else { return false }
+            editor = nil
+            return true
+        }
+        guard popover === self.popover else { return true }
+        if let window = anchor?.window, let event = NSApp.currentEvent, event.type == .leftMouseDown,
+           event.window === window {
+            return false
+        }
+        return closeChild()
     }
 
     func popoverDidClose(_ notification: Notification) {
-        if (notification.object as? NSPopover) === popover {
-            detail?.close()
+        if (notification.object as? NSPopover) === detail {
             detail = nil
+            model.agenda.selectedEvent = nil
+        }
+        if (notification.object as? NSPopover) === popover {
+            _ = closeChild()
             model.agenda.isVisible = false
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
             keyMonitor = nil
@@ -119,17 +150,20 @@ final class PopoverModel {
     let signIn: (String?) -> Void
     let showSettings: () -> Void
     let refresh: () -> Void
+    let writer: EventWriter
     var input = ""
     /// Bumped to ask the input field to take focus.
     var focusRequest = 0
     @ObservationIgnored var close: () -> Void = {}
-    @ObservationIgnored var showChild: (NSView, AnyView, CGFloat) -> Void = { _, _, _ in }
+    /// Shows a popover beside the Mini Window; false when the open one refused to close.
+    @ObservationIgnored var showChild: (NSView, AnyView, CGFloat, NSRectEdge, EventEditorModel?) -> Bool = { _, _, _, _, _ in false }
     @ObservationIgnored var contentView: () -> NSView? = { nil }
 
-    init(accounts: AccountStore, agenda: AgendaModel, signIn: @escaping (String?) -> Void,
+    init(accounts: AccountStore, agenda: AgendaModel, writer: EventWriter, signIn: @escaping (String?) -> Void,
          showSettings: @escaping () -> Void, refresh: @escaping () -> Void) {
         self.accounts = accounts
         self.agenda = agenda
+        self.writer = writer
         self.signIn = signIn
         self.showSettings = showSettings
         self.refresh = refresh
@@ -163,16 +197,90 @@ final class PopoverModel {
         focusInput()
     }
 
-    func openEvent(_ event: EventInstance, anchor: NSView) {
-        showChild(anchor, AnyView(EventDetail(event: event, model: agenda)), 300)
+    /// Opens the detail popover beside `anchor` (the event's row), or beside the Mini Window.
+    func openEvent(_ event: EventInstance, anchor: NSView?) {
+        guard let anchor = anchor ?? contentView() else { return }
+        let editor = EventEditorModel(event: event, agenda: agenda, writer: writer)
+        // to the left of the Mini Window (§6)
+        if showChild(anchor, AnyView(EventEditor(model: editor)), 300, .minX, editor) {
+            agenda.selectedEvent = event.key
+        }
     }
 
     /// Go to Date… (§4.4): a date picker beside the Mini Window.
     func goToDate() {
         guard let view = contentView() else { return }
-        showChild(view, AnyView(GoToDate(initial: agenda.selectedDay) { [weak self] day in
+        _ = showChild(view, AnyView(GoToDate(initial: agenda.selectedDay) { [weak self] day in
             self?.agenda.select(day)
-        }), 240)
+        }), 240, .minX, nil)
+    }
+
+    /// The Notifications popover (§6.2), anchored to the invitation badge.
+    func showNotifications(anchor: NSView) {
+        // below the badge, over the grid (§6.2); the anchor view is not flipped, so minY is its bottom
+        _ = showChild(anchor, AnyView(NotificationsView(model: self)), 300, .minY, nil)
+    }
+
+    // MARK: Event actions (§7.1, §8)
+
+    /// The selected event in the agenda list, if it is still cached.
+    var selectedEvent: EventInstance? {
+        guard let key = agenda.selectedEvent else { return nil }
+        return agenda.sections.lazy.flatMap { $0.allDay + $0.timed }.first { $0.key == key }
+    }
+
+    /// Go to Previous / Next Occurrence (§7.1): selects that occurrence's day and the occurrence.
+    func goToOccurrence(of event: EventInstance, forward: Bool) {
+        guard let series = event.recurringEventId,
+              let next = try? agenda.cache.occurrence(after: event, in: series, forward: forward) else { return }
+        agenda.select(next.start)
+        agenda.selectedEvent = next.key
+    }
+
+    /// Copy (§7.1): the event as text, for pasting into a message.
+    func copy(_ event: EventInstance) {
+        var lines = [event.summary]
+        lines.append(event.allDay ? event.start.formatted(date: .complete, time: .omitted)
+                     : "\(event.start.formatted(date: .complete, time: .omitted)), \(Formatting.timeRange(event.start, event.end))")
+        if let location = event.location, !location.isEmpty { lines.append(location) }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+    }
+
+    func delete(_ event: EventInstance) {
+        var scope = EventWriter.Scope.occurrence
+        if event.recurringEventId != nil {
+            guard let answer = Dialogs.recurringScope() else { return }
+            scope = answer
+        }
+        writer.delete(event, scope: scope)
+        agenda.selectedEvent = nil
+    }
+
+    func respond(_ event: EventInstance, _ response: String) {
+        var scope = EventWriter.Scope.occurrence
+        if event.recurringEventId != nil {
+            guard let answer = Dialogs.recurringScope() else { return }
+            scope = answer
+        }
+        writer.respond(event, response: response, scope: scope)
+    }
+
+    /// Color ›, Show As ›, Visibility › from the context menu: one field, saved at once.
+    func quickEdit(_ event: EventInstance, _ change: (inout EventDraft) -> Void) {
+        let original = EventDraft(event, recurrence: nil)
+        var draft = original
+        change(&draft)
+        guard draft != original else { return }
+        var scope = EventWriter.Scope.occurrence
+        if event.recurringEventId != nil {
+            guard let answer = Dialogs.recurringScope() else { return }
+            scope = answer
+        }
+        Task {
+            let series = scope == .series ? await writer.series(of: event) : nil
+            writer.save(event, original: original, draft: draft, scope: scope, series: series)
+        }
     }
 
     func setSelected(_ selected: Bool, calendar: CalendarInfo) {
@@ -194,7 +302,14 @@ final class PopoverModel {
         case ([.command], "t"): agenda.resetToToday(); return true
         case ([.command, .shift], "t"): goToDate(); return true
         case ([.command, .shift], "r"): refresh(); return true
+        case ([.command], "z"): writer.undoDelete(); return true
         default: break
+        }
+        // ⌫ / ⌘⌫ delete the selected event (§4.3)
+        if input.isEmpty, !agenda.searchMode, event.keyCode == 51, flags.isEmpty || flags == [.command],
+           let selected = selectedEvent {
+            delete(selected)
+            return true
         }
         guard input.isEmpty, !agenda.searchMode else { return false }
         switch (flags.subtracting(.function), event.keyCode) {

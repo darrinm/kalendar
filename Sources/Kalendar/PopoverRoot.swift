@@ -23,18 +23,18 @@ struct PopoverRoot: View {
 
             if agenda.searchMode {
                 Theme.line.frame(height: 1)
-                AgendaList(model: agenda, sections: agenda.searchResults, extendsAtEnd: false,
-                           onOpen: model.openEvent)
+                AgendaList(model: agenda, sections: agenda.searchResults, extendsAtEnd: false, actions: model)
             } else {
-                MonthHeader(agenda: agenda)
+                MonthHeader(model: model)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 6)
                 MonthGrid(model: agenda)
                     .padding(.horizontal, 10)
                     .padding(.bottom, 4)
                 SyncNotice(engine: agenda.engine)
+                WriteErrorNotice(writer: model.writer)
                 Theme.line.frame(height: 1)
-                AgendaList(model: agenda, sections: agenda.sections, extendsAtEnd: true, onOpen: model.openEvent)
+                AgendaList(model: agenda, sections: agenda.sections, extendsAtEnd: true, actions: model)
             }
 
             Spacer(minLength: 0)
@@ -101,7 +101,10 @@ struct PopoverRoot: View {
 
 /// "Oct 2026": month in the text color, year in the accent, then ‹ › (§4.2, §14).
 private struct MonthHeader: View {
-    let agenda: AgendaModel
+    let model: PopoverModel
+    @State private var badgeAnchor: NSView?
+
+    private var agenda: AgendaModel { model.agenda }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -109,6 +112,19 @@ private struct MonthHeader: View {
                 .foregroundStyle(Theme.text)
             Text(agenda.displayedMonth.formatted(.dateTime.year()))
                 .foregroundStyle(Theme.accent)
+            // pending invitations (§4.2): opens the Notifications popover
+            if !agenda.invitations.isEmpty {
+                Button { if let badgeAnchor { model.showNotifications(anchor: badgeAnchor) } } label: {
+                    Text("\(agenda.invitations.count)")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 22, minHeight: 22)
+                        .background(Theme.bad, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .background(AnchorView(view: $badgeAnchor))
+                .accessibilityLabel("\(agenda.invitations.count) invitations")
+            }
             Spacer()
             Button { agenda.moveMonth(by: -1) } label: { Image(systemName: "chevron.left") }
                 .accessibilityLabel("Previous month")
@@ -181,6 +197,28 @@ private struct SyncNotice: View {
     }
 }
 
+/// The last write that failed (§18.3), until dismissed.
+private struct WriteErrorNotice: View {
+    let writer: EventWriter
+
+    var body: some View {
+        if let error = writer.error {
+            HStack(alignment: .top, spacing: 6) {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.bad)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button { writer.clearError() } label: { Image(systemName: "xmark").font(.system(size: 9)) }
+                    .buttonStyle(.plain).foregroundStyle(Theme.muted)
+                    .accessibilityLabel("Dismiss")
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 4)
+        }
+    }
+}
+
 /// ≡ view menu, calendar visibility menu, ⚙ action menu (§4.4).
 private struct Toolbar: View {
     let model: PopoverModel
@@ -196,6 +234,7 @@ private struct Toolbar: View {
                 ToolbarIcon(systemName: "line.3.horizontal")
             }
             .help("View")
+            .accessibilityLabel("View")
             Spacer()
             CalendarsMenu(model: model)
             Spacer()
@@ -204,6 +243,10 @@ private struct Toolbar: View {
                     .keyboardShortcut("t", modifiers: .command)
                 Button("Go to Date…") { model.goToDate() }
                     .keyboardShortcut("t", modifiers: [.command, .shift])
+                Divider()
+                Button("Delete Item") { if let event = model.selectedEvent { model.delete(event) } }
+                    .keyboardShortcut(.delete, modifiers: .command)
+                    .disabled(model.selectedEvent == nil)
                 Divider()
                 Button("Refresh All") { model.refresh() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
@@ -218,6 +261,7 @@ private struct Toolbar: View {
                 ToolbarIcon(systemName: "gearshape")
             }
             .help("Actions")
+            .accessibilityLabel("Actions")
         }
         // .button + .plain draws each label as written; .borderlessButton would redraw it as tinted text
         .menuStyle(.button)
@@ -259,7 +303,9 @@ private struct CalendarsMenu: View {
                 Text("Calendars")
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.muted)
+                    .accessibilityHidden(true)
             }
+            .accessibilityElement(children: .combine)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(Theme.text)
             .padding(.horizontal, 12)
@@ -267,5 +313,6 @@ private struct CalendarsMenu: View {
             .background(Theme.card, in: Capsule())
         }
         .fixedSize()
+        .accessibilityLabel("Calendars")
     }
 }

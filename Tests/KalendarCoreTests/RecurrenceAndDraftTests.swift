@@ -47,6 +47,11 @@ final class RecurrenceAndDraftTests: XCTestCase {
         XCTAssertNil(weekdays.preset)
         XCTAssertEqual(weekdays.summary(calendar: la), "Every week on Monday, Tuesday, Wednesday, Thursday and Friday")
         XCTAssertEqual(RecurrenceRule(frequency: .monthly, interval: 3).summary(), "Every 3 months")
+        // Google's weekly rule names the start's weekday; that is still Every Week
+        let monday = la.date(from: DateComponents(year: 2026, month: 10, day: 12))!
+        let googleWeekly = try XCTUnwrap(RecurrenceRule(rrule: "RRULE:FREQ=WEEKLY;BYDAY=MO"))
+        XCTAssertEqual(googleWeekly.preset(start: monday, calendar: la), .weekly)
+        XCTAssertNil(googleWeekly.preset(start: monday.addingTimeInterval(86400), calendar: la))
     }
 
     func testReplacingKeepsExceptions() {

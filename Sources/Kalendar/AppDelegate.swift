@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let accounts = AccountStore()
     private var cache: CalendarCache!
     private var engine: SyncEngine!
+    private var writer: EventWriter!
     private var statusItem: StatusItemController!
     private var popover: PopoverController!
     private lazy var settings = SettingsWindowController(accounts: accounts, cache: cache, engine: engine, signIn: signIn)
@@ -17,9 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         cache = Self.openCache()
         engine = SyncEngine(accounts: accounts, cache: cache)
+        writer = EventWriter(accounts: accounts, cache: cache, engine: engine)
+        // queued writes go out before each sync, so a sync never overwrites an unsent edit
+        engine.beforeSync = { [weak self] in await self?.writer.flush() }
         accounts.onSignedOut = { [weak self] email in self?.engine.removeAccount(email) }
         let agenda = AgendaModel(cache: cache, engine: engine)
-        let model = PopoverModel(accounts: accounts, agenda: agenda, signIn: signIn,
+        let model = PopoverModel(accounts: accounts, agenda: agenda, writer: writer, signIn: signIn,
                                  showSettings: { [weak self] in self?.showSettings() },
                                  refresh: { [weak self] in self?.sync() })
         popover = PopoverController(model: model)

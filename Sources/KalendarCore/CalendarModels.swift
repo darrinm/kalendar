@@ -35,6 +35,15 @@ public struct Attendee: Codable, Equatable, Hashable {
     public var optional: Bool
     /// needsAction, declined, tentative, accepted
     public var responseStatus: String
+
+    public init(email: String, displayName: String?, isSelf: Bool, organizer: Bool, optional: Bool, responseStatus: String) {
+        self.email = email
+        self.displayName = displayName
+        self.isSelf = isSelf
+        self.organizer = organizer
+        self.optional = optional
+        self.responseStatus = responseStatus
+    }
 }
 
 /// One occurrence: a single event, or one instance of a recurring series.

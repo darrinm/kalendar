@@ -246,6 +246,17 @@ public final class CalendarCache: @unchecked Sendable {
         try db.read { try EventInstance.fetchOne($0, key: ["account": account, "calendarId": calendarId, "id": id]) }
     }
 
+    /// The cached occurrence of `series` just before or after `event` (§7.1).
+    public func occurrence(after event: EventInstance, in series: String, forward: Bool) throws -> EventInstance? {
+        try db.read { db in
+            let rows = EventInstance.filter(Column("account") == event.account && Column("calendarId") == event.calendarId
+                                            && Column("recurringEventId") == series)
+            return forward
+                ? try rows.filter(Column("start") > event.start).order(Column("start")).fetchOne(db)
+                : try rows.filter(Column("start") < event.start).order(Column("start").desc).fetchOne(db)
+        }
+    }
+
     public func upsert(_ events: [EventInstance]) throws {
         try db.write { db in for e in events { try e.save(db) } }
     }

@@ -39,6 +39,8 @@ final class AgendaModel {
     private(set) var sections: [DaySection] = []
     private(set) var marks: [Date: DayMarks] = [:]
     private(set) var calendars: [CalendarInfo] = []
+    /// Invitations awaiting a reply (§6.2): the badge count and the Notifications popover.
+    private(set) var invitations: [EventInstance] = []
     var selectedEvent: String?
 
     var searchMode = false
@@ -136,6 +138,7 @@ final class AgendaModel {
             calendars = try cache.calendars()
             calendarsByKey = Dictionary(uniqueKeysWithValues: calendars.map { ($0.key, $0) })
             eventColors = try cache.eventColors()
+            invitations = try cache.pendingInvitations(now: Date())
         } catch {
             Log.shell.error("cache read failed: \(error.localizedDescription)")
         }

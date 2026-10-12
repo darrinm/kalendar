@@ -147,15 +147,21 @@ public struct RecurrenceRule: Equatable, Hashable {
     }
 
     /// The menu item this rule is, ignoring its end; nil when only "Custom…" describes it.
-    public var preset: Preset? {
-        guard interval == 1, weekdays.isEmpty, otherParts.isEmpty else { return nil }
+    public var preset: Preset? { preset(start: nil) }
+
+    /// As `preset`, but a weekly rule on just the start's weekday also counts as Every Week: Google
+    /// writes a plain weekly event as `FREQ=WEEKLY;BYDAY=MO`.
+    public func preset(start: Date?, calendar: Calendar = .current) -> Preset? {
+        guard interval == 1, otherParts.isEmpty else { return nil }
+        let startDay = start.map { calendar.component(.weekday, from: $0) }
+        guard weekdays.isEmpty || (frequency == .weekly && weekdays == Set([startDay].compactMap { $0 })) else { return nil }
         return Preset.allCases.first { $0.rule.frequency == frequency }
     }
 
     /// "Every Week", "Every 2 weeks on Monday and Wednesday",
     /// "Every week on Monday, Tuesday, Wednesday, Thursday and Friday" (§5.2).
-    public func summary(calendar: Calendar = .current) -> String {
-        if let preset, otherParts.isEmpty { return preset.rawValue }
+    public func summary(start: Date? = nil, calendar: Calendar = .current) -> String {
+        if let preset = preset(start: start, calendar: calendar) { return preset.rawValue }
         var text = interval == 1 ? "Every \(frequency.unit)" : "Every \(interval) \(frequency.unit)s"
         if !weekdays.isEmpty {
             let formatter = DateFormatter()   // full names; Calendar.weekdaySymbols can be abbreviated

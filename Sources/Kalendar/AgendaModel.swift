@@ -28,7 +28,7 @@ final class AgendaModel {
 
     private(set) var today: Date
     /// First day of the month the grid shows.
-    var displayedMonth: Date
+    private(set) var displayedMonth: Date
     private(set) var selectedDay: Date
     /// Set to ask the list to scroll a day's header to the top.
     private(set) var scrollTarget: Date?
@@ -42,12 +42,18 @@ final class AgendaModel {
     var selectedEvent: String?
 
     var searchMode = false
-    var query = "" { didSet { if searchMode { runSearch() } } }
-    var scope: CalendarCache.SearchScope = .all { didSet { runSearch() } }
+    var query = "" { didSet { if searchMode { scheduleSearch() } } }
+    var scope: CalendarCache.SearchScope = .all { didSet { scheduleSearch() } }
     private(set) var searchResults: [DaySection] = []
 
-    private var calendarColors: [String: String] = [:]
-    private var eventColors: [String: [String: String]] = [:]
+    /// False while the popover is closed: cache changes then only mark the model stale.
+    @ObservationIgnored var isVisible = false {
+        didSet { if isVisible && stale { reloadAll() } }
+    }
+    @ObservationIgnored private var stale = false
+    @ObservationIgnored private var calendarsByKey: [String: CalendarInfo] = [:]
+    @ObservationIgnored private var eventColors: [String: [String: String]] = [:]
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
     private var calendar: Calendar { .current }
 
     static let initialListDays = 60
@@ -60,9 +66,13 @@ final class AgendaModel {
         displayedMonth = Calendar.current.dateInterval(of: .month, for: today)!.start
         selectedDay = today
         listStart = today
-        listEnd = Calendar.current.date(byAdding: .day, value: Self.initialListDays, to: today)!
-        reload()
-        engine.onChange = { [weak self] in self?.reload() }
+        listEnd = today
+        startList(at: today)
+        reloadAll()
+        engine.onChange = { [weak self] in
+            guard let self else { return }
+            if isVisible { reloadAll() } else { stale = true }
+        }
     }
 
     // MARK: Navigation
@@ -70,8 +80,7 @@ final class AgendaModel {
     /// On every open (§4): back to today, the list scrolled to it.
     func resetToToday() {
         today = calendar.startOfDay(for: Date())
-        listStart = today
-        listEnd = calendar.date(byAdding: .day, value: Self.initialListDays, to: today)!
+        startList(at: today)
         select(today)
     }
 
@@ -82,16 +91,14 @@ final class AgendaModel {
         let day = calendar.startOfDay(for: day)
         selectedDay = day
         displayedMonth = calendar.dateInterval(of: .month, for: day)!.start
-        let needed = calendar.date(byAdding: .day, value: 31, to: day)!
         let reach = TimeInterval(Self.initialListDays * 86400)
         if day < listStart.addingTimeInterval(-reach) || day > listEnd.addingTimeInterval(reach) {
-            listStart = day
-            listEnd = calendar.date(byAdding: .day, value: Self.initialListDays, to: day)!
+            startList(at: day)
         } else {
-            if day < listStart { listStart = day }
-            if needed > listEnd { listEnd = needed }
+            listStart = min(listStart, day)
+            listEnd = max(listEnd, calendar.date(byAdding: .day, value: 31, to: day)!)
         }
-        reload()
+        reloadEvents()
         scrollTarget = day
         scrollRequest += 1
     }
@@ -104,7 +111,12 @@ final class AgendaModel {
     /// Called when the list's last section appears: "All Days" scrolls forward without end (§4.3).
     func extendList() {
         listEnd = calendar.date(byAdding: .day, value: 30, to: listEnd)!
-        reload()
+        reloadEvents()
+    }
+
+    private func startList(at day: Date) {
+        listStart = day
+        listEnd = calendar.date(byAdding: .day, value: Self.initialListDays, to: day)!
     }
 
     // MARK: Reading the cache
@@ -117,45 +129,64 @@ final class AgendaModel {
         return (0..<42).map { calendar.date(byAdding: .day, value: $0, to: start)! }
     }
 
-    func reload() {
+    /// After the cache changed: calendars, colors and events.
+    private func reloadAll() {
+        stale = false
         do {
             calendars = try cache.calendars()
-            calendarColors = Dictionary(uniqueKeysWithValues: calendars.map { ($0.key, $0.backgroundColor) })
+            calendarsByKey = Dictionary(uniqueKeysWithValues: calendars.map { ($0.key, $0) })
             eventColors = try cache.eventColors()
-
-            let grid = gridDays
-            let from = min(grid.first!, listStart)
-            let to = max(calendar.date(byAdding: .day, value: 1, to: grid.last!)!, listEnd)
-            let events = try cache.events(from: from, to: to)
-            let byDay = bucket(events, from: from, to: to)
-
-            marks = Dictionary(uniqueKeysWithValues: grid.map { day in
-                let dayEvents = byDay[day] ?? []
-                return (day, DayMarks(colors: dayEvents.filter { !$0.isDeclined }.map(color(for:)),
-                                      declined: dayEvents.contains(where: \.isDeclined)))
-            })
-            sections = days(from: listStart, to: listEnd).map { section(for: $0, events: byDay[$0] ?? []) }
-            if searchMode { runSearch() }
         } catch {
             Log.shell.error("cache read failed: \(error.localizedDescription)")
         }
+        reloadEvents()
+        if searchMode { scheduleSearch(delay: 0) }
     }
 
-    private func runSearch() {
+    /// After navigation: only the events for the grid and the list.
+    private func reloadEvents() {
+        let grid = gridDays
+        let from = min(grid.first!, listStart)
+        let to = max(calendar.date(byAdding: .day, value: 1, to: grid.last!)!, listEnd)
+        guard let events = try? cache.events(from: from, to: to) else { return }
+        let byDay = bucket(events, from: from, to: to)
+        marks = Dictionary(uniqueKeysWithValues: grid.map { day in
+            let dayEvents = byDay[day] ?? []
+            return (day, DayMarks(colors: dayEvents.filter { !$0.isDeclined }.map(color(for:)),
+                                  declined: dayEvents.contains(where: \.isDeclined)))
+        })
+        sections = days(from: listStart, to: listEnd).map { section(for: $0, events: byDay[$0] ?? []) }
+    }
+
+    /// Search runs 150 ms after the last keystroke, so typing doesn't query the cache per letter.
+    private func scheduleSearch(delay: UInt64 = 150_000_000) {
+        searchTask?.cancel()
         let text = query.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty, let found = try? cache.search(text, scope: scope) else {
+        guard !text.isEmpty else {
             searchResults = []
             return
         }
-        let byDay = Dictionary(grouping: found) { calendar.startOfDay(for: $0.start) }
-        searchResults = byDay.keys.sorted().map { section(for: $0, events: byDay[$0]!) }
+        let scope = scope
+        searchTask = Task {
+            if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
+            guard !Task.isCancelled, let found = try? cache.search(text, scope: scope) else { return }
+            let byDay = Dictionary(grouping: found) { calendar.startOfDay(for: $0.start) }
+            searchResults = byDay.keys.sorted().map { section(for: $0, events: byDay[$0]!) }
+        }
+    }
+
+    private struct DuplicateKey: Hashable {
+        var summary: String
+        var start: Date
+        var end: Date
+        var location: String?
     }
 
     private func section(for day: Date, events: [EventInstance]) -> DaySection {
         // "Show declined events" is off (§2); identical events on several calendars show once (§4.3)
-        var seen = Set<String>()
+        var seen = Set<DuplicateKey>()
         let shown = events.filter { e in
-            !e.isDeclined && seen.insert("\(e.summary)|\(e.start)|\(e.end)|\(e.location ?? "")").inserted
+            !e.isDeclined && seen.insert(DuplicateKey(summary: e.summary, start: e.start, end: e.end, location: e.location)).inserted
         }
         return DaySection(day: day, allDay: shown.filter(\.allDay), timed: shown.filter { !$0.allDay })
     }
@@ -187,13 +218,12 @@ final class AgendaModel {
 
     /// The event's own color when it has one, otherwise its calendar's.
     func color(for event: EventInstance) -> Color {
-        let hex = event.colorId.flatMap { eventColors[event.account]?[$0] }
-            ?? calendarColors["\(event.account)|\(event.calendarId)"] ?? "#9A9A9A"
-        return Color(hex: hex)
+        Color(hex: event.colorId.flatMap { eventColors[event.account]?[$0] }
+            ?? calendarsByKey[event.calendarKey]?.backgroundColor ?? CalendarInfo.fallbackColor)
     }
 
     func calendarName(for event: EventInstance) -> String {
-        calendars.first { $0.account == event.account && $0.id == event.calendarId }?.summary ?? event.calendarId
+        calendarsByKey[event.calendarKey]?.summary ?? event.calendarId
     }
 
     /// The one event that gets the Join pill (§4.3): in progress or starting within 15 minutes, with a
@@ -209,7 +239,6 @@ extension Color {
     /// "#rrggbb"
     init(hex: String) {
         let value = UInt32(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) ?? 0x9A9A9A
-        self.init(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
-                  blue: Double(value & 0xFF) / 255)
+        self.init(light: value, dark: value)
     }
 }

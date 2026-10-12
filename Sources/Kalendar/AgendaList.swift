@@ -25,6 +25,7 @@ struct AgendaList: View {
                             }
                             ForEach(section.timed, id: \.key) { event in
                                 EventRow(event: event, model: model, now: context.date,
+                                         isSelected: model.selectedEvent == event.key,
                                          showsJoin: event.key == join, onOpen: onOpen)
                             }
                             if section.isEmpty {
@@ -97,13 +98,13 @@ private struct EventRow: View {
     let event: EventInstance
     let model: AgendaModel
     let now: Date
+    let isSelected: Bool
     let showsJoin: Bool
     let onOpen: (EventInstance, NSView) -> Void
     @State private var anchor: NSView?
 
     var body: some View {
         let past = event.end <= now
-        let selected = model.selectedEvent == event.key
         HStack(alignment: .top, spacing: 8) {
             dot.padding(.top, 4)
             VStack(alignment: .leading, spacing: 1) {
@@ -140,7 +141,7 @@ private struct EventRow: View {
         .opacity(past ? 0.5 : 1)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(selected ? Theme.accent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(isSelected ? Theme.accent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 8))
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .background(AnchorView(view: $anchor))

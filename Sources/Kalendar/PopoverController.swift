@@ -93,6 +93,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         if (notification.object as? NSPopover) === popover {
             detail?.close()
             detail = nil
+            model.agenda.isVisible = false
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
             keyMonitor = nil
         }
@@ -138,6 +139,7 @@ final class PopoverModel {
 
     /// Every open starts on today (§4) with the agenda list, not search.
     func willOpen() {
+        agenda.isVisible = true
         agenda.searchMode = false
         agenda.query = ""
         agenda.selectedEvent = nil

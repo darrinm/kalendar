@@ -12,11 +12,6 @@ enum Formatting {
         f.setLocalizedDateFormatFromTemplate("EEEE")
         return f
     }()
-    private static let time: DateFormatter = {
-        let f = DateFormatter()
-        f.timeStyle = .short
-        return f
-    }()
 
     /// ("TODAY", "10/12/26"), ("TOMORROW", …), ("WEDNESDAY", …)
     static func header(for day: Date, today: Date, calendar: Calendar = .current) -> (String, String) {
@@ -33,14 +28,8 @@ enum Formatting {
         return (label.uppercased(), shortDate.string(from: day))
     }
 
-    /// "9:00 – 10:00 AM", "11:30 AM – 12:30 PM": the AM/PM marker appears once when both ends share it.
+    /// "9:00 – 10:00 AM", "11:30 AM – 12:30 PM": Foundation's interval style shows a shared AM/PM once.
     static func timeRange(_ start: Date, _ end: Date) -> String {
-        let s = time.string(from: start), e = time.string(from: end)
-        let symbols = [time.amSymbol ?? "AM", time.pmSymbol ?? "PM"]
-        for symbol in symbols where s.hasSuffix(symbol) && e.hasSuffix(symbol) {
-            let trimmed = s.dropLast(symbol.count).trimmingCharacters(in: .whitespaces)
-            return "\(trimmed) – \(e)"
-        }
-        return "\(s) – \(e)"
+        (start..<max(start, end)).formatted(date: .omitted, time: .shortened)
     }
 }

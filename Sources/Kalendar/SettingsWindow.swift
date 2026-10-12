@@ -100,9 +100,9 @@ private struct AccountsSettings: View {
         .formStyle(.grouped)
     }
 
-    /// The account's calendar count from the cache, re-read whenever sync changes it.
+    /// The account's calendar count from the cache, re-read whenever a sync finishes.
     private func status(for email: String) -> String {
-        _ = engine.revision
+        _ = engine.lastSync
         let n = (try? cache.calendars(account: email).count) ?? 0
         if n == 0 { return engine.state == .syncing ? "Syncing…" : "No calendars synced yet" }
         return n == 1 ? "1 calendar" : "\(n) calendars"

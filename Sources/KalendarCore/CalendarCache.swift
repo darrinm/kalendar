@@ -139,8 +139,9 @@ public final class CalendarCache: @unchecked Sendable {
     // MARK: Writes
 
     /// Replaces the account's calendar list, keeping each surviving calendar's sync state.
-    /// Calendars no longer listed are deleted with their events.
-    public func replaceCalendars(_ list: [CalendarInfo], account: String) throws {
+    /// Calendars no longer listed are deleted with their events. Returns whether anything changed.
+    @discardableResult
+    public func replaceCalendars(_ list: [CalendarInfo], account: String) throws -> Bool {
         try db.write { db in
             let existing = Dictionary(uniqueKeysWithValues:
                 try CalendarInfo.filter(Column("account") == account).fetchAll(db).map { ($0.id, $0) })
@@ -149,14 +150,19 @@ public final class CalendarCache: @unchecked Sendable {
                 try EventInstance.filter(Column("account") == account && Column("calendarId") == gone).deleteAll(db)
                 try CalendarInfo.deleteOne(db, key: ["account": account, "id": gone])
             }
+            var changed = existing.count != list.count
             for var c in list {
                 if let old = existing[c.id] {
                     c.syncToken = old.syncToken
                     c.windowStart = old.windowStart
                     c.windowEnd = old.windowEnd
                 }
-                try c.save(db)
+                if existing[c.id] != c {
+                    try c.save(db)
+                    changed = true
+                }
             }
+            return changed
         }
     }
 
@@ -183,7 +189,8 @@ public final class CalendarCache: @unchecked Sendable {
     public func replaceEvents(_ events: [EventInstance], account: String, calendarId: String) throws {
         try db.write { db in
             try EventInstance.filter(Column("account") == account && Column("calendarId") == calendarId).deleteAll(db)
-            for e in events { try e.save(db) }
+            // insert, not save: the rows were just deleted, so save's UPDATE attempt would be wasted
+            for e in events { try e.insert(db, onConflict: .replace) }
         }
     }
 

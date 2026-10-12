@@ -130,7 +130,12 @@ public enum GoogleCalendarAPI {
         do { return try JSONDecoder().decode(T.self, from: data) } catch { throw APIError.malformedResponse }
     }
 
-    public struct CalendarListPage: Decodable {
+    /// A response page of a list that continues with `nextPageToken`.
+    public protocol Paged: Decodable {
+        var nextPageToken: String? { get }
+    }
+
+    public struct CalendarListPage: Paged {
         struct Item: Decodable {
             var id: String
             var summary: String?
@@ -146,7 +151,7 @@ public enum GoogleCalendarAPI {
         public func calendars(account: String) -> [CalendarInfo] {
             (items ?? []).map {
                 CalendarInfo(account: account, id: $0.id, summary: $0.summaryOverride ?? $0.summary ?? $0.id,
-                             backgroundColor: $0.backgroundColor ?? "#9A9A9A", accessRole: $0.accessRole,
+                             backgroundColor: $0.backgroundColor ?? CalendarInfo.fallbackColor, accessRole: $0.accessRole,
                              selected: $0.selected ?? false, primary: $0.primary ?? false)
             }
         }
@@ -161,7 +166,7 @@ public enum GoogleCalendarAPI {
         }
     }
 
-    public struct EventsPage: Decodable {
+    public struct EventsPage: Paged {
         public var nextPageToken: String?
         public var nextSyncToken: String?
         public var items: [GoogleEvent]?

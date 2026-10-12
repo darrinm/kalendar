@@ -21,6 +21,8 @@ public struct CalendarInfo: Codable, Equatable, Hashable, FetchableRecord, Persi
     public var windowEnd: Date?
 
     public var key: String { "\(account)|\(id)" }
+    /// For a calendar or event Google gave no color.
+    public static let fallbackColor = "#9A9A9A"
 }
 
 public struct Attendee: Codable, Equatable, Hashable {
@@ -59,6 +61,8 @@ public struct EventInstance: Codable, Equatable, Hashable, FetchableRecord, Pers
     public var htmlLink: String?
 
     public var key: String { "\(account)|\(calendarId)|\(id)" }
+    /// The `CalendarInfo.key` of the event's calendar.
+    public var calendarKey: String { "\(account)|\(calendarId)" }
     public var isDeclined: Bool { selfResponse == "declined" }
     /// Not yet accepted: drawn with an open circle (§4.3).
     public var isTentative: Bool { selfResponse == "needsAction" || selfResponse == "tentative" }

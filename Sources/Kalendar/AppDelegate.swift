@@ -17,19 +17,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         cache = Self.openCache()
         engine = SyncEngine(accounts: accounts, cache: cache)
-        accounts.onSignedOut = { [weak self] email in
-            guard let self else { return }
-            do { try cache.deleteAccount(email) } catch {
-                Log.sync.error("deleting cached data failed: \(error.localizedDescription)")
-            }
-            engine.noteCacheChanged()
-        }
+        accounts.onSignedOut = { [weak self] email in self?.engine.removeAccount(email) }
         let agenda = AgendaModel(cache: cache, engine: engine)
         let model = PopoverModel(accounts: accounts, agenda: agenda, signIn: signIn,
                                  showSettings: { [weak self] in self?.showSettings() },
                                  refresh: { [weak self] in self?.sync() })
         popover = PopoverController(model: model)
-        popover.onOpen = { [weak self] in self?.sync(ifOlderThan: 30) }
+        popover.onOpen = { [weak self] in self?.syncIfNeeded(maxAge: 30) }
         statusItem = StatusItemController(
             onToggle: { [weak self] in self?.togglePopover() },
             menu: makeStatusMenu())
@@ -65,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syncTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.sync(ifOlderThan: self.popover.isShown ? 55 : 295)
+                self.syncIfNeeded(maxAge: self.popover.isShown ? 55 : 295)
             }
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil,
@@ -83,14 +77,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         network.start(queue: .global(qos: .utility))
     }
 
-    func sync(ifOlderThan seconds: TimeInterval = 0) {
-        if seconds > 0 {
-            // a periodic or on-open sync is redundant while one runs; syncAll would queue another pass
-            if engine.state == .syncing { return }
-            if let last = engine.lastSync, Date().timeIntervalSince(last) < seconds { return }
-        }
-        Task { await engine.syncAll() }
-    }
+    func sync() { Task { await engine.syncAll() } }
+
+    private func syncIfNeeded(maxAge: TimeInterval) { Task { await engine.syncIfNeeded(maxAge: maxAge) } }
 
     // MARK: Actions
 

@@ -56,7 +56,7 @@ struct EventDetail: View {
             let last = Calendar.current.date(byAdding: .day, value: -1, to: event.end)!
             let first = event.start.formatted(date: .abbreviated, time: .omitted)
             return Calendar.current.isDate(event.start, inSameDayAs: last)
-                ? "\(first), all day" : "\(first) – \(last.formatted(date: .abbreviated, time: .omitted))"
+                ? "\(first), all day" : (event.start..<last).formatted(date: .abbreviated, time: .omitted)
         }
         return "\(event.start.formatted(date: .abbreviated, time: .omitted)), \(Formatting.timeRange(event.start, event.end))"
     }

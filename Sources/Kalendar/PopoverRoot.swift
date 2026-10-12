@@ -46,15 +46,19 @@ struct PopoverRoot: View {
         .frame(width: PopoverController.size.width, height: PopoverController.size.height)
         .background(Theme.background)
         .tint(Theme.accent)
-        // deferred one turn: switching to search swaps in a new text field, which must exist first
-        .onChange(of: model.focusRequest) { DispatchQueue.main.async { inputFocused = true } }
+        .onChange(of: model.focusRequest) { inputFocused = true }
         .onAppear { inputFocused = true }
     }
 
+    /// One text field for both typing and search: its text follows the mode, so focus never has to
+    /// move to a newly created field.
     @ViewBuilder private var inputRow: some View {
         @Bindable var agenda = agenda
+        let searching = agenda.searchMode
+        let text = Binding(get: { searching ? agenda.query : model.input },
+                           set: { if searching { agenda.query = $0 } else { model.input = $0 } })
         HStack(spacing: 8) {
-            if agenda.searchMode {
+            if searching {
                 Menu {
                     Picker("Search in", selection: $agenda.scope) {
                         ForEach(CalendarCache.SearchScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -67,30 +71,23 @@ struct PopoverRoot: View {
                 .fixedSize()
                 .foregroundStyle(Theme.accent)
                 .help("Search in \(agenda.scope.rawValue)")
-                TextField("Search", text: $agenda.query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 17))
-                    .foregroundStyle(Theme.text)
-                    .focused($inputFocused)
-                    .onExitCommand { model.escape() }
-                Button { model.toggleSearch() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Theme.muted)
-                    .accessibilityLabel("Exit search")
-            } else {
-                TextField("", text: $model.input)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 17))
-                    .foregroundStyle(Theme.text)
-                    .focused($inputFocused)
-                    .onExitCommand { model.escape() }
-                    .accessibilityLabel("New event or task")
-                if !model.input.isEmpty {
-                    Button { model.input = "" } label: { Image(systemName: "xmark") }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(Theme.muted)
-                        .accessibilityLabel("Clear")
+            }
+            TextField(searching ? "Search" : "", text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 17))
+                .foregroundStyle(Theme.text)
+                .focused($inputFocused)
+                .onExitCommand { model.escape() }
+                .accessibilityLabel(searching ? "Search" : "New event or task")
+            if searching || !model.input.isEmpty {
+                Button { if searching { model.toggleSearch() } else { model.input = "" } } label: {
+                    Image(systemName: "xmark")
                 }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Theme.muted)
+                .accessibilityLabel(searching ? "Exit search" : "Clear")
+            }
+            if !searching {
                 Button { model.toggleSearch() } label: { Image(systemName: "magnifyingglass") }
                     .buttonStyle(.borderless)
                     .foregroundStyle(Theme.muted)

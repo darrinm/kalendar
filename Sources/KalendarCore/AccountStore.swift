@@ -31,6 +31,8 @@ public final class AccountStore {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
     public private(set) var accounts: [Account] = []
+    /// Called after an account signs out, so its cached data can be deleted (§8.5).
+    @ObservationIgnored public var onSignedOut: (String) -> Void = { _ in }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let vault: TokenVault
@@ -118,6 +120,7 @@ public final class AccountStore {
         accessTokens[email] = nil
         accounts.removeAll { $0.email == email }
         persist()
+        onSignedOut(email)
         Log.auth.info("signed out \(email, privacy: .private)")
     }
 
@@ -132,7 +135,7 @@ public final class AccountStore {
     /// Google no longer accepts that token (for example, access was revoked at
     /// myaccount.google.com), so it is discarded and the request is retried once with a fresh one;
     /// a dead refresh token then surfaces as `invalidGrant`.
-    func sendAuthorized(for email: String, _ make: (String) -> URLRequest) async throws -> (Data, Int) {
+    public func sendAuthorized(for email: String, _ make: (String) -> URLRequest) async throws -> (Data, Int) {
         let (data, status) = try await perform(make(try await accessToken(for: email)))
         guard status == 401 else { return (data, status) }
         accessTokens[email] = nil

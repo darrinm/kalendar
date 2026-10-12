@@ -544,11 +544,11 @@ Tasks (Tasks v1):
 
 ### 18.3 Sync, cache and writes
 - Cache: SQLite through GRDB, in `~/Library/Application Support/Kalendar/`. Holds calendar lists, event instances, master recurring events, task lists, tasks, sync tokens, and the write queue.
-- **Event sync [decision, confirm with a spike at the start of milestone 2]:**
-  - Instances for the visible window come from `events.list` with `singleEvents=true`, `timeMin` = today − 1 year, `timeMax` = today + 1 year. Scrolling past +1 year fetches more on demand.
-  - Change detection uses a separate `events.list` stream with `singleEvents=false` and a `syncToken`. A changed single event or exception is written to the cache directly. A changed master event triggers `events.instances` for that event over the window.
-  - HTTP 410 on a `syncToken` discards that calendar's cache and runs a full sync.
-  - The spike also tests the simpler alternative: one `syncToken` stream with `singleEvents=true` and no time bounds. Use it if Google's expansion of open‑ended recurrences keeps the payload small.
+- **Event sync (built in milestone 2):**
+  - First sync of a calendar: instances for the window come from `events.list` with `singleEvents=true`, `timeMin` = today − 1 year, `timeMax` = today + 1 year. Then one pass over every event with `singleEvents=false` and `fields=nextPageToken,nextSyncToken,items(id)` (ids only, so it is cheap) yields the change-stream `syncToken`.
+  - Incremental sync reads the change stream (`singleEvents=false` + `syncToken`). A changed single event is upserted, or deleted when `status` is `cancelled`. A changed recurring master, or an exception (`recurringEventId`), refetches that series with `events.instances` over the window and replaces its cached instances. Kalendar never expands recurrence rules itself.
+  - HTTP 410 on a `syncToken` discards that calendar's cache and runs a first sync. So does a window more than 30 days stale.
+  - Every calendar is synced, including hidden ones, so showing a calendar is instant. `freeBusyReader` calendars are skipped.
 - **Task sync:** `tasklists.list`, then `tasks.list` per list with `updatedMin` = last sync time, `showDeleted`, `showHidden`, `showCompleted`.
 - **Sync triggers [decision]:** every 60 s while the popover is open, every 5 min otherwise, on popover open, on wake (`NSWorkspace.didWakeNotification`), when the network returns (`NWPathMonitor`), and on ⇧⌘R. No push notifications in v1 (they require a public HTTPS webhook).
 - **Writes:** applied to the cache first so the UI updates immediately, then appended to a persistent queue that runs in order. Patches send `If-Match` with the cached `etag`. On 412 (changed elsewhere), Kalendar refetches the item, discards the local change, and shows an inline error. Offline writes wait in the queue; a grey "Offline — changes will sync" row shows at the top of the list.

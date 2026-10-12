@@ -1,5 +1,4 @@
-// Settings (§12). Milestone 1 implements General and Accounts; the other tabs exist so the
-// window has its final shape.
+// Settings (§12). General and Accounts work; the other tabs exist so the window has its final shape.
 import AppKit
 import KalendarCore
 import SwiftUI
@@ -7,17 +6,22 @@ import SwiftUI
 @MainActor
 final class SettingsWindowController {
     private let accounts: AccountStore
+    private let cache: CalendarCache
+    private let engine: SyncEngine
     private let signIn: (String?) -> Void
     private var window: NSWindow?
 
-    init(accounts: AccountStore, signIn: @escaping (String?) -> Void) {
+    init(accounts: AccountStore, cache: CalendarCache, engine: SyncEngine, signIn: @escaping (String?) -> Void) {
         self.accounts = accounts
+        self.cache = cache
+        self.engine = engine
         self.signIn = signIn
     }
 
     func show() {
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView(accounts: accounts, signIn: signIn))
+            let hosting = NSHostingController(rootView: SettingsView(accounts: accounts, cache: cache,
+                                                                     engine: engine, signIn: signIn))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Kalendar Settings"
             window.styleMask = [.titled, .closable]
@@ -32,13 +36,15 @@ final class SettingsWindowController {
 
 struct SettingsView: View {
     let accounts: AccountStore
+    let cache: CalendarCache
+    let engine: SyncEngine
     let signIn: (String?) -> Void
 
     var body: some View {
         TabView {
             GeneralSettings()
                 .tabItem { Label("General", systemImage: "gearshape") }
-            AccountsSettings(accounts: accounts, signIn: signIn)
+            AccountsSettings(accounts: accounts, cache: cache, engine: engine, signIn: signIn)
                 .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
             NotYet()
                 .tabItem { Label("Appearance", systemImage: "paintbrush") }
@@ -75,6 +81,8 @@ private struct GeneralSettings: View {
 
 private struct AccountsSettings: View {
     let accounts: AccountStore
+    let cache: CalendarCache
+    let engine: SyncEngine
     let signIn: (String?) -> Void
 
     var body: some View {
@@ -84,20 +92,28 @@ private struct AccountsSettings: View {
                     Text("No Google accounts").foregroundStyle(.secondary)
                 }
                 ForEach(accounts.accounts) { account in
-                    AccountSettingsRow(account: account, accounts: accounts, signIn: signIn)
+                    AccountSettingsRow(account: account, accounts: accounts, status: status(for: account.email), signIn: signIn)
                 }
             }
             Button("Add Account…") { signIn(nil) }
         }
         .formStyle(.grouped)
     }
+
+    /// The account's calendar count from the cache, re-read whenever sync changes it.
+    private func status(for email: String) -> String {
+        _ = engine.revision
+        let n = (try? cache.calendars(account: email).count) ?? 0
+        if n == 0 { return engine.state == .syncing ? "Syncing…" : "No calendars synced yet" }
+        return n == 1 ? "1 calendar" : "\(n) calendars"
+    }
 }
 
 private struct AccountSettingsRow: View {
     let account: AccountStore.Account
     let accounts: AccountStore
+    let status: String
     let signIn: (String?) -> Void
-    @State private var status = ""
 
     var body: some View {
         HStack {
@@ -112,11 +128,6 @@ private struct AccountSettingsRow: View {
                 Button("Sign In…") { signIn(account.email) }
             }
             Button("Sign Out") { Task { await accounts.signOut(account.email) } }
-        }
-        .task(id: account) {
-            guard !account.needsReauth else { return }
-            status = "Checking…"
-            status = await accounts.calendarCountText(for: account.email)
         }
     }
 }

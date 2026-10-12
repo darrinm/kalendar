@@ -1,27 +1,28 @@
-# Milestone 1 — Shell
+# Milestone 2 — Sync + read-only agenda
 
-Spec: `docs/SPEC.md` §3, §4 (shell only), §8.5, §12 (skeleton), §13, §17.1, §18.1, §20.
+Spec: `docs/SPEC.md` §4.2, §4.3, §4.4 (toolbar menus), §9, §11, §18.2, §18.3. Milestone 1 notes are in git history.
 
-- [x] Repo: `git init`, `.gitignore`, private GitHub repo `darrinm/kalendar`, push
-- [x] `Package.swift`: `KalendarCore` (library), `Kalendar` (executable, Sparkle), `KalendarCoreTests`
-- [x] Status item: template calendar glyph with today's day number, redrawn on day change; left‑click toggles popover; right‑click menu (Settings…, Check for Updates…, About Kalendar, Quit)
-- [x] Popover: 320×600, transient, input row focused on open, Esc closes when empty; signed‑out row; "Sign in again" row
-- [ ] Nested‑popover prototype: built (account row → detail popover). **Not verified**: needs a signed‑in account and a real click
-- [x] Global hotkey ⌃⌥Space toggles the popover (Carbon). Not verified by hand; another app may hold the same shortcut
-- [x] Google sign‑in: PKCE + `ASWebAuthenticationSession`, iOS client, all 7 scopes, granted‑scope check, refresh, revoke on sign‑out, Keychain storage, per‑account `needsReauth`. **Not verified against Google**: needs the user to grant consent
-- [x] Settings window: General (Launch at login, Show alerts, Check for updates automatically), Accounts (list with calendar count, Add Account…, Sign In…, Sign Out), placeholder tabs Appearance / Events & Tasks / Calendars
-- [x] Launch at login via `SMAppService.mainApp`, on by default at first launch
-- [x] `UpdaterController` (Sparkle), started at launch
-- [x] `scripts/bundle.sh`, `.github/workflows/release.yml`, `.github/workflows/ci.yml`, `docs/RELEASING.md`, `THIRD-PARTY-NOTICES.md`
-- [x] Sparkle EdDSA key pair (`--account kalendar`, public key `IvzRqsKBac2QL1HlpQYED6iLxr+RZ5m/+RSwGEBj7J4=`)
-- [ ] Repo secrets: 5 of 7 set. Missing `APPLE_ID`, `APPLE_APP_PASSWORD` (not stored on this Mac)
-- [x] Tests: PKCE (RFC 7636 vector), auth URL, callback parsing, token request/response parsing, missing‑scope detection, id_token email, invalid_grant, AccountStore sign‑in/refresh/reauth/sign‑out (15 tests)
-- [ ] Verify end to end: sign in to both accounts, see calendar counts, open the detail popover, hotkey
+## Sync (KalendarCore)
+- [x] GRDB cache in `~/Library/Application Support/Kalendar/cache.sqlite`: calendars, event instances, colors, per-calendar sync state
+- [x] Calendar API: paged `calendarList`, `colors`, windowed `events.list` (`singleEvents=true`), change stream (`singleEvents=false` + `syncToken`, ids-only full pass), `events.instances`, `calendarList.patch selected`
+- [x] Event JSON → `EventInstance` (timed / all-day, attendees, self response, conference URL, colors)
+- [x] `SyncEngine`: first sync = window fetch (today −1 y … +1 y) + ids-only pass for the sync token; incremental = change stream → upsert singles, refetch instances for changed series; 410 → full resync; window older than 30 days → full resync
+- [x] Sync triggers: popover open, every 60 s while open, every 5 min otherwise, wake, network return, ⇧⌘R; sign-out deletes that account's cache
+- [x] Tests: event parsing fixtures, cache queries, sync engine against a scripted transport (first sync, incremental single, incremental series, 410)
+
+## Agenda UI
+- [x] Month grid: 6 rows, weekday header (current weekday in accent), today circle, selected-day ring, dots (≤4, calendar/event color, declined dot), adjacent-month days muted, ‹ › navigation
+- [x] Agenda list: day sections from today (TODAY/TOMORROW/weekday headers), all-day pills, timed rows (dot, time range, 📹, title, location), past dimmed, Join pill (in progress or ≤15 min), combine identical, declined hidden, "No events" rows; click day scrolls; extends on scroll
+- [x] Keyboard: ←/→ month, ⇧←/⇧→ day, ⇧↑/⇧↓ week, ⌘T today (when the input is empty)
+- [x] Search: 🔍 / ⌘F, scope menu (Title · Location · Invitees · All), results over the cache, Esc exits
+- [x] Toolbar: calendar visibility menu (writes Google `selected`), ⚙ menu (Go to Today, Go to Date…, Refresh All, Settings…, Check for Updates…, Launch at Login, Quit)
+- [x] Reset to today on reopen
+- [x] Verify: build, tests, bundle, screenshots with real data
 
 ## Review
 
-- `swift build -Xswiftc -warnings-as-errors`, `swift test` (15 pass), `scripts/bundle.sh`, and GitHub CI all pass.
-- The bundled app launches, shows the status item, and opens the popover (screenshot checked: month title, sign‑in row, settings button).
-- At launch the status item has no on‑screen position for a moment, and `NSPopover.show` silently does nothing against it. Only the `-openPopoverAtLaunch` test path hits this; it waits 1 s.
-- cua‑driver's synthetic clicks don't reach SwiftUI buttons in the popover while Kalendar is not the active app, so sign‑in and the nested popover need a manual check.
-- The original spec and its screenshots stay on disk in `reference-spec/` (gitignored). `docs/SPEC.md` is the redacted copy in the repo.
+- `swift build -Xswiftc -warnings-as-errors` and `swift test` (35 tests) pass. New tests cover Google event parsing, conference-link detection, path escaping, cache search scopes, and the sync engine against a fake Google: first sync, incremental single and series changes, 410 resync, a calendar removed from Google, a failed sync keeping the cache, calendar visibility writes and their revert, and account deletion.
+- Synced against both real accounts: 12 calendars, 3,703 events in the ±1 year window.
+- Checked in the running app with screenshots: today's agenda matches the reference app (Columbus Day pill, David / Darrin, Weekly Kick Off, Josh / Darrin, video glyphs); ⌘F search for "kick"; Esc out of search; → to next month; ⇧↓ to next week; ⌘T back to today; clicking an event opens the detail popover to the left while the main popover stays open (the milestone 1 nested-popover check).
+- Not checked by hand: the Calendars visibility menu and Go to Date… (both need menu clicks), the list growing on scroll, sync on wake and on network return.
+- The detail popover is read-only; milestone 3 makes it editable.

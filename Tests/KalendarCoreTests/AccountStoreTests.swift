@@ -119,8 +119,9 @@ final class AccountStoreTests: XCTestCase {
                                (200, #"{"items":[{"id":"1","summary":"A","accessRole":"owner"}]}"#)]
         let store = makeStore()
         try await signIn(store)
-        let calendars = try await store.calendars(for: "a@example.com")
-        XCTAssertEqual(calendars.map(\.id), ["1"])
+        let page = try await store.calendarAPI(GoogleCalendarAPI.CalendarListPage.self, for: "a@example.com",
+                                               GoogleCalendarAPI.calendarListRequest())
+        XCTAssertEqual(page.calendars(account: "a@example.com").map(\.id), ["1"])
         XCTAssertEqual(transport.sent[1].value(forHTTPHeaderField: "Authorization"), "Bearer at1")
         XCTAssertEqual(transport.sent[3].value(forHTTPHeaderField: "Authorization"), "Bearer at2")
     }
@@ -132,7 +133,8 @@ final class AccountStoreTests: XCTestCase {
         let store = makeStore()
         try await signIn(store)
         do {
-            _ = try await store.calendars(for: "a@example.com")
+            _ = try await store.calendarAPI(GoogleCalendarAPI.CalendarListPage.self, for: "a@example.com",
+                                            GoogleCalendarAPI.calendarListRequest())
             XCTFail("expected invalidGrant")
         } catch {
             XCTAssertEqual(error as? GoogleOAuth.Error, .invalidGrant)

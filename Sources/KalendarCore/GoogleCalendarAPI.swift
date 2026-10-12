@@ -32,7 +32,7 @@ public enum GoogleCalendarAPI {
 extension AccountStore {
     public func calendars(for email: String) async throws -> [GoogleCalendarAPI.CalendarSummary] {
         let token = try await accessToken(for: email)
-        let (data, response) = try await URLSession.shared.data(for: GoogleCalendarAPI.calendarListRequest(accessToken: token))
-        return try GoogleCalendarAPI.parseCalendarList(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        let (data, status) = try await sendAuthorized(GoogleCalendarAPI.calendarListRequest(accessToken: token), for: email)
+        return try GoogleCalendarAPI.parseCalendarList(data: data, status: status)
     }
 }

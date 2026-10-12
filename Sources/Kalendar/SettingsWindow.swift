@@ -53,19 +53,23 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
-    // Sparkle reads this user default itself and prefers it over the Info.plist value
-    @AppStorage("SUEnableAutomaticChecks") private var automaticUpdates = true
+    @State private var automaticUpdates = UpdaterController.shared.automaticallyChecks
     @AppStorage("showAlerts") private var showAlerts = true
 
     var body: some View {
         Form {
             Toggle("Launch at login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, enabled in
+                    // the line below writes launchAtLogin back, which calls this again
+                    guard enabled != LaunchAtLogin.isEnabled else { return }
                     LaunchAtLogin.set(enabled)
                     launchAtLogin = LaunchAtLogin.isEnabled
                 }
             Toggle("Show alerts", isOn: $showAlerts)
             Toggle("Check for updates automatically", isOn: $automaticUpdates)
+                .onChange(of: automaticUpdates) { _, enabled in
+                    UpdaterController.shared.automaticallyChecks = enabled
+                }
         }
         .formStyle(.grouped)
     }

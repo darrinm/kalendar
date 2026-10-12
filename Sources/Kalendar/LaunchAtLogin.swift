@@ -7,7 +7,9 @@ import ServiceManagement
 enum LaunchAtLogin {
     private static let initializedKey = "launchAtLoginInitialized"
 
-    static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
+    /// `.requiresApproval` counts as on: the app is registered and waits for the user to allow it
+    /// in System Settings › Login Items.
+    static var isEnabled: Bool { [.enabled, .requiresApproval].contains(SMAppService.mainApp.status) }
 
     static func set(_ enabled: Bool) {
         do {

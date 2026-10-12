@@ -1,10 +1,15 @@
 // AccountStore against a scripted transport: sign-in, refresh, a revoked token, sign-out.
+import Security
 import XCTest
 @testable import KalendarCore
 
 private final class MemoryVault: TokenVault {
     var tokens: [String: String] = [:]
-    func refreshToken(for email: String) -> String? { tokens[email] }
+    var readError: Error?
+    func refreshToken(for email: String) throws -> String? {
+        if let readError { throw readError }
+        return tokens[email]
+    }
     func setRefreshToken(_ token: String?, for email: String) { tokens[email] = token }
 }
 
@@ -87,6 +92,35 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertTrue(body.contains("refresh_token=rt-a%40example.com"))
     }
 
+    func testConcurrentCallersShareOneRefresh() async throws {
+        transport.responses = [(200, tokenJSON(email: "a@example.com")),
+                               (200, #"{"access_token":"at2","expires_in":3600}"#)]
+        let store = makeStore()
+        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+        clock += 4000
+        async let first = store.accessToken(for: "a@example.com")
+        async let second = store.accessToken(for: "a@example.com")
+        let tokens = try await [first, second]
+        XCTAssertEqual(tokens, ["at2", "at2"])
+        XCTAssertEqual(transport.sent.count, 2)   // the sign-in and one refresh
+    }
+
+    func testCalendarList401DiscardsCachedAccessToken() async throws {
+        transport.responses = [(200, tokenJSON(email: "a@example.com")),
+                               (401, "{}"),
+                               (200, #"{"access_token":"at2","expires_in":3600}"#),
+                               (200, #"{"items":[{"id":"1","summary":"A","accessRole":"owner"}]}"#)]
+        let store = makeStore()
+        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+        do {
+            _ = try await store.calendars(for: "a@example.com")
+            XCTFail("expected an error")
+        } catch {}
+        let calendars = try await store.calendars(for: "a@example.com")
+        XCTAssertEqual(calendars.map(\.id), ["1"])
+        XCTAssertEqual(transport.sent[3].value(forHTTPHeaderField: "Authorization"), "Bearer at2")
+    }
+
     func testRevokedRefreshTokenMarksNeedsReauth() async throws {
         transport.responses = [(200, tokenJSON(email: "a@example.com")),
                                (400, #"{"error":"invalid_grant"}"#)]
@@ -119,5 +153,21 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertNil(vault.tokens["a@example.com"])
         XCTAssertEqual(transport.sent.last?.url?.path, "/revoke")
         XCTAssertEqual(makeStore().accounts.map(\.email), ["b@example.com"])
+    }
+
+    /// A locked keychain or a denied access prompt is temporary; it must not force a new sign-in.
+    func testKeychainReadErrorDoesNotMarkNeedsReauth() async throws {
+        transport.responses = [(200, tokenJSON(email: "a@example.com"))]
+        let store = makeStore()
+        try await store.completeSignIn(code: "c", pkce: .init(verifier: "v"))
+        clock += 4000
+        vault.readError = Keychain.ReadError(status: errSecInteractionNotAllowed)
+        do {
+            _ = try await store.accessToken(for: "a@example.com")
+            XCTFail("expected the read error")
+        } catch {
+            XCTAssertEqual(error as? Keychain.ReadError, Keychain.ReadError(status: errSecInteractionNotAllowed))
+        }
+        XCTAssertEqual(store.accounts.first?.needsReauth, false)
     }
 }

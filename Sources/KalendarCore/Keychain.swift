@@ -36,13 +36,22 @@ public enum Keychain {
         return status == errSecSuccess
     }
 
-    public static func get(_ account: String) -> String? {
+    /// A failed read other than "no such item", such as a locked keychain or a denied access prompt.
+    public struct ReadError: LocalizedError, Equatable {
+        public let status: OSStatus
+        public var errorDescription: String? { "Kalendar couldn't read its Google sign-in from the Keychain (\(status))." }
+    }
+
+    /// nil when no item exists. Other failures throw, so a temporary Keychain problem is never
+    /// mistaken for a missing token.
+    public static func get(_ account: String) throws -> String? {
         var q = query(account)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return nil }
+        let status = SecItemCopyMatching(q as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data else { throw ReadError(status: status) }
         return String(data: data, encoding: .utf8)
     }
 }

@@ -38,7 +38,7 @@ struct PopoverRoot: View {
             HStack {
                 Spacer()
                 Button {
-                    (NSApp.delegate as? AppDelegate)?.showSettings()
+                    model.showSettings()
                 } label: {
                     Image(systemName: "gearshape")
                         .font(.system(size: 15))

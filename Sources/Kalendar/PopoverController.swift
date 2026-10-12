@@ -14,10 +14,13 @@ final class PopoverController: NSObject, NSPopoverDelegate {
 
     private let popover = NSPopover()
     private var detail: NSPopover?
+    /// When the popover last closed. A transient popover closes on mouse-down outside itself, which
+    /// includes the status item; the status item's action then fires on mouse-up and would reopen it.
+    private var closedAt = Date.distantPast
     private let model: PopoverModel
 
-    init(accounts: AccountStore, signIn: @escaping (String?) -> Void) {
-        model = PopoverModel(accounts: accounts, signIn: signIn)
+    init(accounts: AccountStore, signIn: @escaping (String?) -> Void, showSettings: @escaping () -> Void) {
+        model = PopoverModel(accounts: accounts, signIn: signIn, showSettings: showSettings)
         super.init()
         popover.behavior = .transient
         popover.animates = true
@@ -35,6 +38,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
             close()
             return
         }
+        if NSApp.currentEvent?.type == .leftMouseUp, Date().timeIntervalSince(closedAt) < 0.5 { return }
         // An accessory app is not active until told to be; without this the text field cannot
         // become first responder when the popover opens from the global hotkey.
         NSApp.activate(ignoringOtherApps: true)
@@ -61,6 +65,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         if (notification.object as? NSPopover) === popover {
+            closedAt = Date()
             detail?.close()
             detail = nil
         }
@@ -73,15 +78,17 @@ final class PopoverController: NSObject, NSPopoverDelegate {
 final class PopoverModel {
     let accounts: AccountStore
     let signIn: (String?) -> Void
+    let showSettings: () -> Void
     var input = ""
     /// Bumped to ask the input field to take focus.
     var focusRequest = 0
     @ObservationIgnored var close: () -> Void = {}
     @ObservationIgnored var showDetail: (NSView, AnyView) -> Void = { _, _ in }
 
-    init(accounts: AccountStore, signIn: @escaping (String?) -> Void) {
+    init(accounts: AccountStore, signIn: @escaping (String?) -> Void, showSettings: @escaping () -> Void) {
         self.accounts = accounts
         self.signIn = signIn
+        self.showSettings = showSettings
     }
 
     func focusInput() { focusRequest += 1 }

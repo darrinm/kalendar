@@ -124,6 +124,9 @@ public struct PendingWrite: Codable, Equatable, FetchableRecord, MutablePersista
     public var refreshSeries: String?
     /// Sent as an `events.insert` when the write fails (undo of a delete, §8.2).
     public var fallbackBody: Data?
+    /// For an insert: the id of the cached placeholder it replaces, removed when Google's copy
+    /// (with its new id) arrives. A move to another account caches the event under its old id.
+    public var replaces: String?
     /// The event's title, for error messages.
     public var summary: String
     public var createdAt: Date

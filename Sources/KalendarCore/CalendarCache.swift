@@ -96,6 +96,9 @@ public final class CalendarCache: @unchecked Sendable {
                 t.column("createdAt", .datetime).notNull()
             }
         }
+        m.registerMigration("v3-replaces") { db in
+            try db.alter(table: "pendingWrite") { t in t.add(column: "replaces", .text) }
+        }
         return m
     }
 
@@ -305,6 +308,24 @@ public final class CalendarCache: @unchecked Sendable {
 
     public func removeWrite(_ id: Int64) throws {
         try db.write { _ = try PendingWrite.deleteOne($0, key: id) }
+    }
+
+    /// Removes every queued write about `eventId` and returns them.
+    public func removeWrites(eventId: String) throws -> [PendingWrite] {
+        try db.write { db in
+            let rows = PendingWrite.filter(Column("eventId") == eventId)
+            let removed = try rows.fetchAll(db)
+            try rows.deleteAll(db)
+            return removed
+        }
+    }
+
+    /// Points queued writes about `eventId` at the event's new version.
+    public func updateQueuedIfMatch(eventId: String, to etag: String) throws {
+        try db.write { db in
+            _ = try PendingWrite.filter(Column("eventId") == eventId && Column("ifMatch") != nil)
+                .updateAll(db, Column("ifMatch").set(to: etag))
+        }
     }
 
     public func pendingWriteCount() throws -> Int {

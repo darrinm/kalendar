@@ -316,7 +316,7 @@ private struct CustomRepeat: View {
                 Text("Monthly").tag(RecurrenceRule.Frequency.monthly)
                 Text("Yearly").tag(RecurrenceRule.Frequency.yearly)
             }
-            Stepper("Every \(rule.interval) \(unit)\(rule.interval == 1 ? "" : "s")", value: $rule.interval, in: 1...99)
+            Stepper("Every \(rule.interval) \(rule.frequency.unit)\(rule.interval == 1 ? "" : "s")", value: $rule.interval, in: 1...99)
             if rule.frequency == .weekly {
                 HStack(spacing: 4) {
                     ForEach(1...7, id: \.self) { day in
@@ -341,15 +341,6 @@ private struct CustomRepeat: View {
         .padding(14)
         .frame(width: 260)
         .onChange(of: rule.frequency) { if rule.frequency != .weekly { rule.weekdays = [] } }
-    }
-
-    private var unit: String {
-        switch rule.frequency {
-        case .daily: "day"
-        case .weekly: "week"
-        case .monthly: "month"
-        case .yearly: "year"
-        }
     }
 }
 

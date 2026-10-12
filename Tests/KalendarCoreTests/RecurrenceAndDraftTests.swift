@@ -35,6 +35,7 @@ final class RecurrenceAndDraftTests: XCTestCase {
         var until = RecurrenceRule(frequency: .weekly)
         until.end = .until(la.date(from: DateComponents(year: 2026, month: 12, day: 31))!)
         XCTAssertEqual(until.rrule(calendar: la), "RRULE:FREQ=WEEKLY;UNTIL=20270101T075959Z")
+        XCTAssertEqual(until.rrule(calendar: la, allDay: true), "RRULE:FREQ=WEEKLY;UNTIL=20261231")
         let parsed = try XCTUnwrap(RecurrenceRule(rrule: until.rrule(calendar: la)))
         guard case .until(let day) = parsed.end else { return XCTFail("expected until") }
         XCTAssertEqual(la.component(.day, from: day), 31)

@@ -123,7 +123,13 @@ final class PopoverController: NSObject, NSPopoverDelegate {
             model.agenda.selectedEvent = nil
         }
         if (notification.object as? NSPopover) === popover {
-            _ = closeChild()
+            // normally closeChild already ran in popoverShouldClose; if the main popover closed some
+            // other way, the detail must not outlive it, even when its save was cancelled
+            if !closeChild() {
+                editor = nil
+                detail?.close()
+                detail = nil
+            }
             model.agenda.isVisible = false
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
             keyMonitor = nil
@@ -248,21 +254,13 @@ final class PopoverModel {
     }
 
     func delete(_ event: EventInstance) {
-        var scope = EventWriter.Scope.occurrence
-        if event.recurringEventId != nil {
-            guard let answer = Dialogs.recurringScope() else { return }
-            scope = answer
-        }
+        guard let scope = Dialogs.scope(for: event) else { return }
         writer.delete(event, scope: scope)
         agenda.selectedEvent = nil
     }
 
     func respond(_ event: EventInstance, _ response: String) {
-        var scope = EventWriter.Scope.occurrence
-        if event.recurringEventId != nil {
-            guard let answer = Dialogs.recurringScope() else { return }
-            scope = answer
-        }
+        guard let scope = Dialogs.scope(for: event) else { return }
         writer.respond(event, response: response, scope: scope)
     }
 
@@ -271,12 +269,7 @@ final class PopoverModel {
         let original = EventDraft(event, recurrence: nil)
         var draft = original
         change(&draft)
-        guard draft != original else { return }
-        var scope = EventWriter.Scope.occurrence
-        if event.recurringEventId != nil {
-            guard let answer = Dialogs.recurringScope() else { return }
-            scope = answer
-        }
+        guard draft != original, let scope = Dialogs.scope(for: event) else { return }
         Task {
             let series = scope == .series ? await writer.series(of: event) : nil
             writer.save(event, original: original, draft: draft, scope: scope, series: series)

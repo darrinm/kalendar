@@ -15,7 +15,7 @@ final class EventWriterTests: XCTestCase {
     override func setUp() async throws {
         let defaults = UserDefaults(suiteName: "EventWriterTests")!
         defaults.removePersistentDomain(forName: "EventWriterTests")
-        defaults.set(["me@example.com"], forKey: "accounts")
+        defaults.set(["me@example.com", "work@example.com"], forKey: "accounts")
         let google = self.google
         let accounts = AccountStore(defaults: defaults, vault: StubVault(), transport: { try await google($0) },
                                     now: { [now] in now })
@@ -28,6 +28,10 @@ final class EventWriterTests: XCTestCase {
             CalendarInfo(account: "me@example.com", id: "other", summary: "Other", backgroundColor: "#000000",
                          accessRole: "owner", selected: true, primary: false),
         ], account: "me@example.com")
+        try cache.replaceCalendars([
+            CalendarInfo(account: "work@example.com", id: "work", summary: "Work", backgroundColor: "#000000",
+                         accessRole: "owner", selected: true, primary: true),
+        ], account: "work@example.com")
     }
 
     private func event(id: String = "e1", attendees: [Attendee] = [], organizer: Bool = true,
@@ -204,6 +208,25 @@ final class EventWriterTests: XCTestCase {
         XCTAssertNotNil(try cache.event(account: "me@example.com", calendarId: "other", id: "e1"))
     }
 
+    /// Another account: insert a copy there, delete the original; the placeholder cached under the
+    /// old id gives way to Google's copy under its new id.
+    func testMoveToAnotherAccountLeavesOneCopy() async throws {
+        let e = event()
+        try cache.upsert([e])
+        let original = EventDraft(e, recurrence: nil)
+        var draft = original
+        draft.account = "work@example.com"
+        draft.calendarId = "work"
+        google.handler = { r, _ in r.httpMethod == "DELETE" ? (204, "") : (200, self.serverEvent("new1", title: "Standup")) }
+        writer.save(e, original: original, draft: draft, scope: .occurrence, series: nil)
+        await writer.flush()
+        XCTAssertEqual(google.requests.map { "\($0.httpMethod!) \($0.url!.path)" },
+                       ["POST /calendar/v3/calendars/work/events", "DELETE /calendar/v3/calendars/primary/events/e1"])
+        XCTAssertNil(try cached())
+        XCTAssertNil(try cache.event(account: "work@example.com", calendarId: "work", id: "e1"))
+        XCTAssertNotNil(try cache.event(account: "work@example.com", calendarId: "work", id: "new1"))
+    }
+
     func testRejectedWriteReportsAndRefetches() async throws {
         let e = event()
         try cache.upsert([e])
@@ -215,5 +238,61 @@ final class EventWriterTests: XCTestCase {
         await writer.flush()
         XCTAssertEqual(writer.error, "Couldn't save “Nope”: Google returned an error (HTTP 403).")
         XCTAssertEqual(try cached()?.summary, "Standup")
+    }
+    func testServerErrorKeepsTheWriteQueued() async throws {
+        let e = event()
+        try cache.upsert([e])
+        let original = EventDraft(e, recurrence: nil)
+        var draft = original
+        draft.summary = "Later"
+        google.handler = { _, _ in (503, "{}") }
+        writer.save(e, original: original, draft: draft, scope: .occurrence, series: nil)
+        await writer.flush()
+        XCTAssertEqual(try cache.pendingWriteCount(), 1)
+        XCTAssertNil(writer.error)
+        XCTAssertEqual(try cached()?.summary, "Later")
+    }
+
+    /// A second edit queued behind the first is sent with the etag the first one produced.
+    func testQueuedEditsCarryTheNewEtag() async throws {
+        let e = event()
+        try cache.upsert([e])
+        let original = EventDraft(e, recurrence: nil)
+        var first = original
+        first.summary = "One"
+        var second = first
+        second.location = "Room 4"
+        google.offline = true
+        writer.save(e, original: original, draft: first, scope: .occurrence, series: nil)
+        writer.save(e.applying(first), original: first, draft: second, scope: .occurrence, series: nil)
+        await writer.flush()
+        google.offline = false
+        google.handler = { r, _ in
+            let etag = r.value(forHTTPHeaderField: "If-Match")
+            return etag == "\"1\"" && self.google.requests.count == 1 ? (200, self.serverEvent("e1", title: "One"))
+                : etag == "\"2\"" ? (200, self.serverEvent("e1", title: "One", etag: "\"3\"")) : (412, "{}")
+        }
+        await writer.flush()
+        XCTAssertEqual(google.requests.map { $0.value(forHTTPHeaderField: "If-Match") }, ["\"1\"", "\"2\""])
+        XCTAssertNil(writer.error)
+    }
+
+    /// When a write is rejected, later writes about the same event are dropped with it.
+    func testRejectedWriteDropsLaterWritesToTheEvent() async throws {
+        let e = event()
+        try cache.upsert([e])
+        let original = EventDraft(e, recurrence: nil)
+        var draft = original
+        draft.summary = "Nope"
+        google.offline = true
+        writer.save(e, original: original, draft: draft, scope: .occurrence, series: nil)
+        writer.delete(e, scope: .occurrence)
+        await writer.flush()
+        XCTAssertEqual(try cache.pendingWriteCount(), 2)
+        google.offline = false
+        google.handler = { r, _ in r.httpMethod == "PATCH" ? (403, "{}") : (200, self.serverEvent("e1", title: "Standup")) }
+        await writer.flush()
+        XCTAssertEqual(google.requests.compactMap(\.httpMethod), ["PATCH", "GET"])
+        XCTAssertEqual(try cache.pendingWriteCount(), 0)
     }
 }

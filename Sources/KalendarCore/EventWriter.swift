@@ -22,7 +22,7 @@ public final class EventWriter {
     @ObservationIgnored private let cache: CalendarCache
     @ObservationIgnored private let engine: SyncEngine
     @ObservationIgnored private let now: () -> Date
-    @ObservationIgnored private var flushing = false
+    @ObservationIgnored private var flushTask: Task<Void, Never>?
     @ObservationIgnored private var lastDeleteScope: Scope = .occurrence
 
     public init(accounts: AccountStore, cache: CalendarCache, engine: SyncEngine, now: @escaping () -> Date = Date.init) {
@@ -64,13 +64,20 @@ public final class EventWriter {
         // a repeat change always belongs to the series (or the one-off becoming one)
         let fields = draft.patchBody(from: original, seriesTimes: toSeries ? series.map { ($0.start, $0.end) } : nil)
         let moved = draft.calendarKey != original.calendarKey
+        // without the master's times and rule, a series write would move the whole series to this
+        // occurrence's date and drop its exceptions
+        if toSeries, series == nil, fields?["start"] != nil || draft.recurrence != original.recurrence
+            || (moved && draft.account != original.account) {
+            error = "Couldn't save “\(draft.summary)”: the repeating event couldn't be loaded. Try again when online."
+            return
+        }
 
         var updated = event.applying(draft)
         updated.calendarId = original.calendarId
         updated.account = original.account
         if var fields {
             if toSeries, let series, draft.recurrence != original.recurrence {
-                fields["recurrence"] = RecurrenceRule.replacing(draft.recurrence, in: series.recurrence)
+                fields["recurrence"] = RecurrenceRule.replacing(draft.recurrence, in: series.recurrence, allDay: draft.allDay)
             }
             enqueue(PendingWrite(
                 account: event.account, calendarId: event.calendarId, eventId: targetId, method: "PATCH",
@@ -80,7 +87,7 @@ public final class EventWriter {
                 summary: draft.summary, createdAt: now()))
         }
         if moved {
-            enqueueMove(event: event, targetId: targetId, draft: draft, toSeries: toSeries)
+            enqueueMove(event: event, targetId: targetId, draft: draft, toSeries: toSeries, series: series)
             updated.account = draft.account
             updated.calendarId = draft.calendarId
         }
@@ -92,7 +99,7 @@ public final class EventWriter {
 
     /// Same account: `events.move`. Another account: insert a copy there, then delete the original
     /// (offered only for events the user organizes, §6.1).
-    private func enqueueMove(event: EventInstance, targetId: String, draft: EventDraft, toSeries: Bool) {
+    private func enqueueMove(event: EventInstance, targetId: String, draft: EventDraft, toSeries: Bool, series: Series?) {
         if draft.account == event.account {
             enqueue(PendingWrite(
                 account: event.account, calendarId: event.calendarId, eventId: targetId, method: "POST",
@@ -100,10 +107,23 @@ public final class EventWriter {
                 query: ["destination": draft.calendarId, "sendUpdates": Self.sendUpdates(event)],
                 refreshSeries: toSeries ? targetId : nil, summary: draft.summary, createdAt: now()))
         } else {
-            enqueue(PendingWrite(
+            var copy = draft
+            if let series, toSeries {
+                // the series' first occurrence, shifted as far as this occurrence moved
+                copy.start = series.start.addingTimeInterval(draft.start.timeIntervalSince(event.start))
+                copy.end = series.end.addingTimeInterval(draft.end.timeIntervalSince(event.end))
+            } else if event.recurringEventId != nil && !toSeries {
+                // one occurrence moves alone, as a one-off event
+                copy.recurrence = nil
+            }
+            var body = copy.insertBody()
+            if let series, toSeries { body["recurrence"] = RecurrenceRule.replacing(draft.recurrence, in: series.recurrence, allDay: draft.allDay) }
+            var insert = PendingWrite(
                 account: draft.account, calendarId: draft.calendarId, eventId: targetId, method: "POST",
                 path: GoogleCalendarAPI.eventPath(calendarId: draft.calendarId), query: ["sendUpdates": "none"],
-                body: draft.insertBody(), summary: draft.summary, createdAt: now()))
+                body: body, summary: draft.summary, createdAt: now())
+            insert.replaces = event.id
+            enqueue(insert)
             enqueue(PendingWrite(
                 account: event.account, calendarId: event.calendarId, eventId: targetId, method: "DELETE",
                 path: GoogleCalendarAPI.eventPath(calendarId: event.calendarId, eventId: targetId),
@@ -193,11 +213,23 @@ public final class EventWriter {
 
     // MARK: Sending
 
-    /// Sends queued writes in order until the queue is empty or the network fails.
+    /// Sends queued writes in order until the queue is empty or the network fails. A call made while
+    /// a flush runs waits for that flush, so a sync that follows never overtakes an unsent write.
     public func flush() async {
-        guard !flushing else { return }
-        flushing = true
-        defer { flushing = false }
+        if let running = flushTask {
+            await running.value
+            return
+        }
+        // cleared in the same step that finds the queue empty, so a write queued after that starts a new flush
+        let task = Task {
+            await drain()
+            flushTask = nil
+        }
+        flushTask = task
+        await task.value
+    }
+
+    private func drain() async {
         var changed = false
         while let write = try? cache.nextWrite(), let id = write.id {
             let data: Data, status: Int
@@ -210,8 +242,11 @@ public final class EventWriter {
             } catch {
                 report(write, error.localizedDescription)
                 try? cache.removeWrite(id)
+                await dropDependents(of: write)
                 continue
             }
+            // rate limits and server errors are temporary: the write waits for the next flush
+            if status == 429 || (500..<600).contains(status) { break }
             try? cache.removeWrite(id)
             changed = true
             // 410 on a delete: already gone, which is what the delete wanted
@@ -222,6 +257,7 @@ public final class EventWriter {
             case 412:
                 report(write, nil)
                 await refetch(write)
+                await dropDependents(of: write)
             default:
                 if let fallback = write.fallbackBody {
                     // undo of a delete: Google refused to restore the event, so insert a copy
@@ -232,24 +268,48 @@ public final class EventWriter {
                 } else {
                     report(write, GoogleCalendarAPI.APIError.http(status).localizedDescription)
                     await refetch(write)
+                    await dropDependents(of: write)
                 }
             }
         }
         if changed { engine.onChange() }
     }
 
+    /// Later writes to the same event assumed the dropped one succeeded (the delete half of a move
+    /// to another account, an edit made on top of it), so they are dropped too and the cache
+    /// takes Google's copy of what they touched.
+    private func dropDependents(of write: PendingWrite) async {
+        guard let dependents = try? cache.removeWrites(eventId: write.eventId) else { return }
+        for d in dependents where d.account != write.account || d.calendarId != write.calendarId {
+            await refetch(d)
+        }
+    }
+
     /// A write Google accepted: its response becomes the cached event.
     private func landed(_ write: PendingWrite, data: Data) async {
         if write.path.hasSuffix("/move") {
-            try? cache.deleteEvent(account: write.account, calendarId: write.calendarId, id: write.eventId)
+            try? cache.deleteEvent(account: write.account, calendarId: write.calendarId, id: write.eventId,
+                                   series: write.refreshSeries)
+        }
+        // writes queued behind this one were made against the version it replaced
+        if write.method != "DELETE", let etag = try? JSONDecoder().decode(GoogleCalendarAPI.GoogleEvent.self, from: data).etag {
+            try? cache.updateQueuedIfMatch(eventId: write.eventId, to: etag)
         }
         if let series = write.refreshSeries {
             let calendarId = write.query["destination"] ?? write.calendarId
             await engine.refreshSeries(series, account: write.account, calendarId: calendarId)
         } else if write.method != "DELETE",
-                  let g = try? JSONDecoder().decode(GoogleCalendarAPI.GoogleEvent.self, from: data),
-                  let instance = g.instance(account: write.account, calendarId: write.query["destination"] ?? write.calendarId) {
-            try? cache.upsert([instance])
+                  let g = try? JSONDecoder().decode(GoogleCalendarAPI.GoogleEvent.self, from: data) {
+            let calendarId = write.query["destination"] ?? write.calendarId
+            if let placeholder = write.replaces {
+                try? cache.deleteEvent(account: write.account, calendarId: calendarId, id: placeholder)
+            }
+            if g.isRecurringMaster {
+                // an inserted series: its occurrences, not the master, belong in the cache
+                await engine.refreshSeries(g.id, account: write.account, calendarId: calendarId)
+            } else if let instance = g.instance(account: write.account, calendarId: calendarId) {
+                try? cache.upsert([instance])
+            }
         }
     }
 

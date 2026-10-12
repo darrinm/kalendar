@@ -4,6 +4,12 @@ import KalendarCore
 
 @MainActor
 enum Dialogs {
+    /// The scope of a write to `event`: `.occurrence` for a one-off event, the user's answer for a
+    /// recurring one. nil means Cancel.
+    static func scope(for event: EventInstance) -> EventWriter.Scope? {
+        event.recurringEventId == nil ? .occurrence : recurringScope()
+    }
+
     /// "You're responding to a repeating event." Only This Event / All / Cancel. nil means Cancel.
     static func recurringScope() -> EventWriter.Scope? {
         NSApp.activate(ignoringOtherApps: true)

@@ -9,7 +9,7 @@ public struct RecurrenceRule: Equatable, Hashable {
     public enum Frequency: String, CaseIterable, Hashable {
         case daily = "DAILY", weekly = "WEEKLY", monthly = "MONTHLY", yearly = "YEARLY"
 
-        var unit: String {
+        public var unit: String {
             switch self {
             case .daily: "day"
             case .weekly: "week"
@@ -91,9 +91,9 @@ public struct RecurrenceRule: Equatable, Hashable {
         otherParts = other
     }
 
-    /// The RRULE line. UNTIL is written as the end of that day in `calendar`'s time zone, in UTC,
-    /// which is what RFC 5545 requires for a rule on a timed event.
-    public func rrule(calendar: Calendar = .current) -> String {
+    /// The RRULE line. RFC 5545 wants UNTIL as a date for an all-day event, and for a timed event
+    /// as a UTC time: the end of that day in `calendar`'s time zone.
+    public func rrule(calendar: Calendar = .current, allDay: Bool = false) -> String {
         var parts = ["FREQ=\(frequency.rawValue)"]
         if interval > 1 { parts.append("INTERVAL=\(interval)") }
         if !weekdays.isEmpty { parts.append("BYDAY=" + weekdays.sorted().map { Self.dayCodes[$0 - 1] }.joined(separator: ",")) }
@@ -101,6 +101,9 @@ public struct RecurrenceRule: Equatable, Hashable {
         switch end {
         case .never: break
         case .count(let n): parts.append("COUNT=\(n)")
+        case .until(let day) where allDay:
+            let c = calendar.dateComponents([.year, .month, .day], from: day)
+            parts.append(String(format: "UNTIL=%04d%02d%02d", c.year!, c.month!, c.day!))
         case .until(let day):
             let last = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: calendar.startOfDay(for: day))!
             parts.append("UNTIL=" + Self.untilFormatter.string(from: last))
@@ -109,9 +112,9 @@ public struct RecurrenceRule: Equatable, Hashable {
     }
 
     /// `recurrence` with the RRULE replaced (or removed when `rule` is nil); EXDATE/RDATE lines stay.
-    public static func replacing(_ rule: RecurrenceRule?, in recurrence: [String]) -> [String] {
+    public static func replacing(_ rule: RecurrenceRule?, in recurrence: [String], allDay: Bool = false) -> [String] {
         let rest = recurrence.filter { !$0.hasPrefix("RRULE:") }
-        return rule.map { [$0.rrule()] + rest } ?? rest
+        return rule.map { [$0.rrule(allDay: allDay)] + rest } ?? rest
     }
 
     private static let untilFormatter: DateFormatter = {

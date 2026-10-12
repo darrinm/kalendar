@@ -57,27 +57,16 @@ final class EventEditorModel {
     /// which occurrences they apply to. Returns false to keep the popover open (Cancel).
     func shouldClose() -> Bool {
         guard hasChanges else { return true }
-        var scope = EventWriter.Scope.occurrence
-        if isRecurring {
-            // a repeat change belongs to the whole series, so it needs no question
-            if draft.recurrence != original.recurrence {
-                scope = .series
-            } else {
-                guard let answer = Dialogs.recurringScope() else { return false }
-                scope = answer
-            }
-        }
+        // a repeat change belongs to the whole series, so it needs no question
+        let asked = isRecurring && draft.recurrence != original.recurrence ? .series : Dialogs.scope(for: event)
+        guard let scope = asked else { return false }
         writer.save(event, original: original, draft: draft, scope: scope, series: series)
         return true
     }
 
     /// Accept / Decline / Maybe from the popover's button row.
     func respond(_ response: String) {
-        var scope = EventWriter.Scope.occurrence
-        if isRecurring {
-            guard let answer = Dialogs.recurringScope() else { return }
-            scope = answer
-        }
+        guard let scope = Dialogs.scope(for: event) else { return }
         writer.respond(event, response: response, scope: scope)
     }
 

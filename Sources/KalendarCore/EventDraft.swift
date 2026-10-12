@@ -67,7 +67,7 @@ public struct EventDraft: Equatable {
         if visibility != original.visibility { body["visibility"] = visibility }
         if reminders != original.reminders { body["reminders"] = Self.reminders(reminders) }
         if recurrence != original.recurrence {
-            body["recurrence"] = recurrence.map { [$0.rrule(calendar: calendar)] } ?? []
+            body["recurrence"] = recurrence.map { [$0.rrule(calendar: calendar, allDay: allDay)] } ?? []
         }
         if attendees != original.attendees { body["attendees"] = attendees.map(Self.attendee) }
         return body.isEmpty ? nil : body
@@ -86,7 +86,7 @@ public struct EventDraft: Equatable {
         if !location.isEmpty { body["location"] = location }
         if !notes.isEmpty { body["description"] = notes }
         if let colorId { body["colorId"] = colorId }
-        if let recurrence { body["recurrence"] = [recurrence.rrule(calendar: calendar)] }
+        if let recurrence { body["recurrence"] = [recurrence.rrule(calendar: calendar, allDay: allDay)] }
         if !attendees.isEmpty { body["attendees"] = attendees.map(Self.attendee) }
         return body
     }

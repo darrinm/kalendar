@@ -75,9 +75,6 @@ private struct DayCell: View {
                 ForEach(Array(marks.colors.prefix(4).enumerated()), id: \.offset) { _, color in
                     Circle().fill(color).frame(width: 4, height: 4)
                 }
-                if marks.declined {
-                    Circle().fill(Theme.bad).frame(width: 4, height: 4)
-                }
                 if marks.tasks {
                     Image(systemName: "checkmark").font(.system(size: 6, weight: .bold)).foregroundStyle(Theme.muted)
                 }

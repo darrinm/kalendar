@@ -25,7 +25,6 @@ enum TaskSort: String, CaseIterable {
 /// What a grid cell shows under the day number (§4.2).
 struct DayMarks: Equatable {
     var colors: [Color] = []
-    var declined = false
     /// Incomplete tasks due this day: a ✓ under the dots (§4.2).
     var tasks = false
 }
@@ -190,10 +189,9 @@ final class AgendaModel {
             !t.completed && t.due! < today ? today : t.due!
         }
         marks = Dictionary(uniqueKeysWithValues: grid.map { day in
-            let dayEvents = byDay[day] ?? []
-            return (day, DayMarks(colors: dayEvents.filter { !$0.isDeclined }.map(color(for:)),
-                                  declined: dayEvents.contains(where: \.isDeclined),
-                                  tasks: tasksByDay[day]?.contains { !$0.completed } ?? false))
+            // "Show declined events" is off (§2): declined events get no dot
+            (day, DayMarks(colors: (byDay[day] ?? []).filter { !$0.isDeclined }.map(color(for:)),
+                           tasks: tasksByDay[day]?.contains { !$0.completed } ?? false))
         })
         sections = days(from: listStart, to: listEnd).map { day in
             var s = section(for: day, events: byDay[day] ?? [])

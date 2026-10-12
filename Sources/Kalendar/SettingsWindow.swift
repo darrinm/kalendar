@@ -75,6 +75,7 @@ private struct GeneralSettings: View {
                 get: { launchAtLogin },
                 set: { LaunchAtLogin.set($0); launchAtLogin = LaunchAtLogin.isEnabled }))
             Toggle("Show alerts", isOn: $showAlerts)
+                .onChange(of: showAlerts) { alerts.setNeedsReschedule() }
             if showAlerts && !alerts.allowedBySystem {
                 HStack {
                     Text("Alerts are off in System Settings")

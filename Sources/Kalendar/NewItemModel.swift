@@ -82,7 +82,8 @@ final class NewItemModel {
         }
         let parser = NLParser(defaultDay: defaultDay) { [weak self] in self?.contacts.uniqueEmail(named: $0) }
         let parsed = parser.parse(input)
-        if chosenKind ?? parsed.isTask {
+        // without a task list there is nowhere to add a task, so the input stays an event
+        if chosenKind ?? parsed.isTask, !agenda.taskLists.isEmpty {
             updateTask(parsed)
             return
         }

@@ -47,10 +47,6 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
                 self?.setNeedsReschedule()
             }
         })
-        // the Show alerts setting (§19)
-        observers.append(nc.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.setNeedsReschedule() }
-        })
     }
 
     /// Asks for permission once an account is signed in; macOS asks the user only the first time.
@@ -68,10 +64,13 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
         Log.shell.info("notification permission: \(status.rawValue)")
     }
 
-    /// Coalesces the bursts of cache changes a sync makes into one reschedule.
+    /// Coalesces the bursts of cache changes a sync makes into one reschedule. A reschedule waits for
+    /// the one already running, so two never interleave their removals and additions.
     func setNeedsReschedule() {
-        pendingReschedule?.cancel()
+        let previous = pendingReschedule
+        previous?.cancel()
         pendingReschedule = Task {
+            await previous?.value
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled else { return }
             await reschedule()
@@ -79,13 +78,16 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func reschedule() async {
+        let pending = await center.pendingNotificationRequests()
+        // snoozed alerts kept below count against the system's limit of pending requests
+        let snoozed = pending.filter { $0.identifier.hasPrefix(Self.snoozePrefix) }.count
+        let now = Date()
         let planned = Self.enabled
-            ? AlertPlanner.plan(events: (try? AlertPlanner.candidates(in: cache, now: Date())) ?? [],
+            ? AlertPlanner.plan(events: (try? AlertPlanner.candidates(in: cache, now: now)) ?? [],
                                 calendars: Dictionary(uniqueKeysWithValues: ((try? cache.calendars()) ?? []).map { ($0.key, $0) }),
-                                now: Date())
+                                now: now, limit: AlertPlanner.limit - snoozed)
             : []
         let wanted = Set(planned.map(\.identifier))
-        let pending = await center.pendingNotificationRequests()
         // snoozed alerts stay until they fire, unless alerts were turned off
         let stale = pending.map(\.identifier).filter {
             !wanted.contains($0) && (!Self.enabled || !$0.hasPrefix(Self.snoozePrefix))
@@ -96,6 +98,8 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
             let content = Self.content(for: alert.event)
             // an unchanged request is left alone; re-adding one would reset nothing but costs a call
             if let old = existing[alert.identifier], old.content.title == content.title, old.content.body == content.body,
+               old.content.categoryIdentifier == content.categoryIdentifier,
+               old.content.userInfo as NSDictionary == content.userInfo as NSDictionary,
                (old.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() == alert.fireDate {
                 continue
             }

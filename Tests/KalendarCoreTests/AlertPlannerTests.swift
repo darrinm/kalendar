@@ -49,6 +49,21 @@ final class AlertPlannerTests: XCTestCase {
         XCTAssertEqual(plan.first?.fireDate, midnight.addingTimeInterval(-9 * 3600))
     }
 
+    func testAllDayUsingDefaultsGetsNone() {
+        // the calendar's defaults are for timed events; 30 minutes before midnight would fire the night before
+        let midnight = Calendar.current.startOfDay(for: now.addingTimeInterval(86400))
+        var e = event("holiday", startsIn: midnight.timeIntervalSince(now) / 60,
+                      reminders: Reminders(useDefault: true, minutes: []), allDay: true)
+        e.end = midnight.addingTimeInterval(86400)
+        XCTAssertTrue(AlertPlanner.plan(events: [e], calendars: calendars, now: now).isEmpty)
+    }
+
+    func testDuplicateWithoutRemindersDoesNotHideOneWithThem() {
+        let twice = [event("a", startsIn: 60, reminders: Reminders(useDefault: false, minutes: []), summary: "Sync"),
+                     event("b", startsIn: 60, calendar: "other", summary: "Sync")]
+        XCTAssertEqual(AlertPlanner.plan(events: twice, calendars: calendars, now: now).map(\.identifier), ["other|b|10"])
+    }
+
     func testAtMost64AndDuplicatesOnce() {
         let many = (0..<100).map { event("e\($0)", startsIn: Double(20 + $0)) }
         XCTAssertEqual(AlertPlanner.plan(events: many, calendars: calendars, now: now).count, AlertPlanner.limit)

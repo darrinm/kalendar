@@ -28,16 +28,22 @@ public enum AlertPlanner {
     }
 
     /// The alerts firing in (now, now + horizon], earliest first, at most `limit`. The event's own
-    /// popup reminders, or its calendar's defaults when it uses them. Declined events get none. An
-    /// event on several calendars (same title, times and location) alerts once. An all-day event's
-    /// start is local midnight, so its reminders count back from 00:00.
-    public static func plan(events: [EventInstance], calendars: [String: CalendarInfo], now: Date) -> [PlannedAlert] {
+    /// popup reminders, or its calendar's defaults when it uses them; the calendar's defaults are for
+    /// timed events, so an all-day event using them gets none. Declined events get none. An event on
+    /// several calendars (same title, times and location) alerts once, from the first copy that has
+    /// reminders. An all-day event's start is local midnight, so its reminders count back from 00:00.
+    public static func plan(events: [EventInstance], calendars: [String: CalendarInfo], now: Date,
+                            limit: Int = limit) -> [PlannedAlert] {
         struct Same: Hashable { var summary: String; var start: Date; var end: Date; var location: String? }
         var seen = Set<Same>()
         var result: [PlannedAlert] = []
-        for e in events where !e.isDeclined
-            && seen.insert(Same(summary: e.summary, start: e.start, end: e.end, location: e.location)).inserted {
-            let minutes = e.reminders.useDefault ? calendars[e.calendarKey]?.defaultReminders ?? [] : e.reminders.minutes
+        for e in events where !e.isDeclined {
+            let minutes = e.reminders.useDefault
+                ? (e.allDay ? [] : calendars[e.calendarKey]?.defaultReminders ?? [])
+                : e.reminders.minutes
+            guard !minutes.isEmpty,
+                  seen.insert(Same(summary: e.summary, start: e.start, end: e.end, location: e.location)).inserted
+            else { continue }
             for m in Set(minutes) {
                 let fire = e.start.addingTimeInterval(-Double(m) * 60)
                 guard fire > now, fire <= now.addingTimeInterval(horizon) else { continue }
@@ -45,6 +51,6 @@ public enum AlertPlanner {
                                            fireDate: fire, minutes: m, event: e))
             }
         }
-        return Array(result.sorted { ($0.fireDate, $0.identifier) < ($1.fireDate, $1.identifier) }.prefix(limit))
+        return Array(result.sorted { ($0.fireDate, $0.identifier) < ($1.fireDate, $1.identifier) }.prefix(max(limit, 0)))
     }
 }

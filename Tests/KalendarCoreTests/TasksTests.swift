@@ -79,6 +79,12 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(try cache.allTasks().isEmpty)
     }
 
+    func testTaskMovedToAnotherListLeavesTheOldList() throws {
+        try cache.upsertTask(task("x", list: "L1"))
+        try cache.applyTaskChanges(account: me, listId: "L2", upserts: [task("x", list: "L2")], deletedIds: [])
+        XCTAssertEqual(try cache.allTasks().map(\.key), ["\(me)|L2|x"])
+    }
+
     /// The agenda (§4.3): tasks due in the range, and incomplete ones due earlier.
     func testAgendaQueryIncludesOverdueIncompleteTasks() throws {
         for t in [task("due", due: "2026-10-14"), task("overdue", due: "2026-09-28"),
@@ -180,5 +186,28 @@ final class TasksTests: XCTestCase {
         await writer.flush()
         XCTAssertEqual(google.requests.first?.httpMethod, "DELETE")
         XCTAssertTrue(try cache.allTasks().isEmpty)
+    }
+
+    func testDeletingATaskAlreadyGoneIsNotAnError() async throws {
+        try cache.upsertTask(task("a"))
+        google.handler = { _, _ in (404, "") }
+        writer.deleteTask(task("a"))
+        await writer.flush()
+        XCTAssertNil(writer.error)
+        XCTAssertTrue(try cache.allTasks().isEmpty)
+    }
+
+    /// Google deletes subtasks with their parent, so a parent can't take the insert-then-delete path.
+    func testTaskWithSubtasksStaysInItsAccount() throws {
+        try cache.upsertTask(task("a"))
+        var child = task("b")
+        child.parent = "a"
+        try cache.upsertTask(child)
+        let work = TaskList(account: "work@example.com", id: "W", title: "Work")
+        XCTAssertFalse(writer.canMove(task("a"), to: work))
+        XCTAssertTrue(writer.canMove(task("a"), to: TaskList(account: me, id: "L2", title: "Errands")))
+        writer.move(task("a"), to: work)
+        XCTAssertEqual(try cache.pendingWriteCount(), 0)
+        XCTAssertTrue(writer.canMove(child, to: work), "a subtask has none of its own")
     }
 }

@@ -260,8 +260,9 @@ public final class EventWriter {
             if status == 429 || (500..<600).contains(status) { break }
             try? cache.removeWrite(id)
             changed = true
-            // 410 on a delete: already gone, which is what the delete wanted
-            let accepted = (200..<300).contains(status) || (status == 410 && write.method == "DELETE")
+            // 410 on a delete (404 from the Tasks API): already gone, which is what the delete wanted
+            let gone = status == 410 || (status == 404 && write.isTask)
+            let accepted = (200..<300).contains(status) || (gone && write.method == "DELETE")
             switch status {
             case _ where accepted:
                 await landed(write, data: data)

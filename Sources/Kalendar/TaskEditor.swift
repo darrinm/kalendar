@@ -136,7 +136,7 @@ private struct TaskListMenu: View {
     let model: TaskEditorModel
 
     var body: some View {
-        let lists = model.agenda.taskLists
+        let lists = model.agenda.taskLists.filter { model.isNew || model.writer.canMove(model.original, to: $0) }
         let byAccount = Dictionary(grouping: lists, by: \.account)
         Menu {
             ForEach(byAccount.keys.sorted(), id: \.self) { account in
@@ -224,7 +224,9 @@ struct TaskContextMenu: View {
 
     var body: some View {
         Button(task.completed ? "Uncomplete" : "Complete") { actions.writer.setCompleted(task, !task.completed) }
-        let byAccount = Dictionary(grouping: actions.agenda.taskLists.filter { $0.key != task.listKey }, by: \.account)
+        let byAccount = Dictionary(grouping: actions.agenda.taskLists.filter {
+            $0.key != task.listKey && actions.writer.canMove(task, to: $0)
+        }, by: \.account)
         Menu("Move to List") {
             ForEach(byAccount.keys.sorted(), id: \.self) { account in
                 Section(account) {

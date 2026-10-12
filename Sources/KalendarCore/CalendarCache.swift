@@ -394,12 +394,17 @@ public final class CalendarCache: @unchecked Sendable {
         try db.write { try list.save($0) }
     }
 
-    /// Changes from Google: upserts, and deletions by id.
+    /// Changes from Google: upserts, and deletions by id. A task id is unique within the account, so
+    /// an upserted task cached on another list was moved here and its old row goes.
     public func applyTaskChanges(account: String, listId: String, upserts: [TaskItem], deletedIds: Set<String>) throws {
         try db.write { db in
             if !deletedIds.isEmpty {
                 try TaskItem.filter(Column("account") == account && Column("listId") == listId
                                     && deletedIds.contains(Column("id"))).deleteAll(db)
+            }
+            if !upserts.isEmpty {
+                try TaskItem.filter(Column("account") == account && Column("listId") != listId
+                                    && upserts.map(\.id).contains(Column("id"))).deleteAll(db)
             }
             for t in upserts { try t.save(db) }
         }
@@ -407,6 +412,13 @@ public final class CalendarCache: @unchecked Sendable {
 
     public func task(account: String, listId: String, id: String) throws -> TaskItem? {
         try db.read { try TaskItem.fetchOne($0, key: ["account": account, "listId": listId, "id": id]) }
+    }
+
+    public func hasSubtasks(_ task: TaskItem) throws -> Bool {
+        try db.read { db in
+            try TaskItem.filter(Column("account") == task.account && Column("listId") == task.listId
+                                && Column("parent") == task.id).fetchCount(db) > 0
+        }
     }
 
     public func upsertTask(_ task: TaskItem) throws { try db.write { try task.save($0) } }

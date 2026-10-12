@@ -46,9 +46,15 @@ extension EventWriter {
         Task { await flush() }
     }
 
+    /// Whether `list` can take `task`. Across accounts the move deletes the original, and Google
+    /// deletes a task's subtasks with it, so a task with subtasks stays in its account.
+    public func canMove(_ task: TaskItem, to list: TaskList) -> Bool {
+        list.account == task.account || !((try? cache.hasSubtasks(task)) ?? true)
+    }
+
     /// Move to List › (§7.3): `tasks.move` within an account, insert-then-delete across accounts.
     public func move(_ task: TaskItem, to list: TaskList) {
-        guard list.account != task.account || list.id != task.listId else { return }
+        guard list.account != task.account || list.id != task.listId, canMove(task, to: list) else { return }
         guard list.account == task.account else {
             insertTask(title: task.title, notes: task.notes, due: task.due, completed: task.completed,
                        account: list.account, listId: list.id, movedFrom: task.id)

@@ -46,12 +46,7 @@ struct NotificationsView: View {
             }
             .frame(maxHeight: 480)
             .fixedSize(horizontal: false, vertical: true)
-            if let error = model.writer.error {
-                Text(error)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.bad)
-                    .padding(12)
-            }
+            WriteError(writer: model.writer, padding: 12)
         }
         .background(Theme.background)
         .animation(.easeOut(duration: 0.2), value: invitations.map(\.key))
@@ -89,13 +84,7 @@ private struct InvitationRow: View {
             .contentShape(Rectangle())
             // the Notifications popover closes, so the detail opens beside the Mini Window (§6.2)
             .onTapGesture { model.openEvent(event, anchor: nil) }
-            HStack {
-                Button("Maybe") { model.respond(event, "tentative") }
-                Spacer()
-                Button("Decline") { model.respond(event, "declined") }
-                Button("Accept") { model.respond(event, "accepted") }
-            }
-            .buttonStyle(.bordered)
+            RSVPButtons { model.respond(event, $0) }
         }
         .padding(12)
     }

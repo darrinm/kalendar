@@ -225,6 +225,8 @@ final class AgendaModel {
             ?? calendarsByKey[event.calendarKey]?.backgroundColor ?? CalendarInfo.fallbackColor)
     }
 
+    func calendar(forKey key: String) -> CalendarInfo? { calendarsByKey[key] }
+
     func calendarName(for event: EventInstance) -> String {
         calendarsByKey[event.calendarKey]?.summary ?? event.calendarId
     }

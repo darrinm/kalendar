@@ -73,8 +73,9 @@ public struct EventDraft: Equatable {
         return body.isEmpty ? nil : body
     }
 
-    /// The body for `events.insert`: every field, for a copy (Duplicate, undo of a delete).
-    public func insertBody(calendar: Calendar = .current) -> [String: Any] {
+    /// The body for `events.insert`: every field, for a copy (Duplicate, undo of a delete). A copy
+    /// without `guests` sends nobody an invitation.
+    public func insertBody(guests: Bool = true, calendar: Calendar = .current) -> [String: Any] {
         var body: [String: Any] = [
             "summary": summary,
             "start": Self.time(start, allDay: allDay, timeZone: timeZone, calendar: calendar),
@@ -87,7 +88,7 @@ public struct EventDraft: Equatable {
         if !notes.isEmpty { body["description"] = notes }
         if let colorId { body["colorId"] = colorId }
         if let recurrence { body["recurrence"] = [recurrence.rrule(calendar: calendar, allDay: allDay)] }
-        if !attendees.isEmpty { body["attendees"] = attendees.map(Self.attendee) }
+        if guests && !attendees.isEmpty { body["attendees"] = attendees.map(Self.attendee) }
         return body
     }
 
@@ -117,10 +118,6 @@ public struct EventDraft: Equatable {
     /// The RSVP patch (§6): every attendee, with only the user's response changed, since `patch`
     /// replaces arrays rather than merging them.
     public static func rsvpBody(attendees: [Attendee], response: String) -> [String: Any] {
-        ["attendees": attendees.map { a in
-            var a = a
-            if a.isSelf { a.responseStatus = response }
-            return attendee(a)
-        }]
+        ["attendees": attendees.responding(response).map(attendee)]
     }
 }

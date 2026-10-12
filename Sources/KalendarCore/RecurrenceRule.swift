@@ -9,6 +9,9 @@ public struct RecurrenceRule: Equatable, Hashable {
     public enum Frequency: String, CaseIterable, Hashable {
         case daily = "DAILY", weekly = "WEEKLY", monthly = "MONTHLY", yearly = "YEARLY"
 
+        /// "Daily", for the Custom repeat frequency picker.
+        public var adjective: String { unit == "day" ? "Daily" : unit.capitalized + "ly" }
+
         public var unit: String {
             switch self {
             case .daily: "day"
@@ -31,8 +34,8 @@ public struct RecurrenceRule: Equatable, Hashable {
     /// Weekdays for a weekly rule, 1 = Sunday … 7 = Saturday. Empty means "the start's weekday".
     public var weekdays: Set<Int>
     public var end: End
-    /// RRULE parts Kalendar does not edit, in their original order.
-    var otherParts: [(String, String)]
+    /// RRULE parts Kalendar does not edit, "KEY=VALUE", in their original order.
+    var otherParts: [String]
 
     public init(frequency: Frequency, interval: Int = 1, weekdays: Set<Int> = [], end: End = .never) {
         self.frequency = frequency
@@ -41,13 +44,6 @@ public struct RecurrenceRule: Equatable, Hashable {
         self.end = end
         otherParts = []
     }
-
-    public static func == (a: Self, b: Self) -> Bool {
-        a.frequency == b.frequency && a.interval == b.interval && a.weekdays == b.weekdays && a.end == b.end
-            && a.otherParts.map { "\($0.0)=\($0.1)" } == b.otherParts.map { "\($0.0)=\($0.1)" }
-    }
-
-    public func hash(into hasher: inout Hasher) { hasher.combine(rrule()) }
 
     private static let dayCodes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
 
@@ -66,7 +62,7 @@ public struct RecurrenceRule: Equatable, Hashable {
         var interval = 1
         var weekdays = Set<Int>()
         var end = End.never
-        var other: [(String, String)] = []
+        var other: [String] = []
         for part in body.split(separator: ";") {
             let kv = part.split(separator: "=", maxSplits: 1).map(String.init)
             guard kv.count == 2 else { continue }
@@ -81,9 +77,9 @@ public struct RecurrenceRule: Equatable, Hashable {
                 if days.allSatisfy({ Self.dayCodes.contains($0) }) {
                     weekdays = Set(days.compactMap { Self.dayCodes.firstIndex(of: $0).map { $0 + 1 } })
                 } else {
-                    other.append((kv[0], kv[1]))
+                    other.append(String(part))
                 }
-            default: other.append((kv[0], kv[1]))
+            default: other.append(String(part))
             }
         }
         guard let frequency else { return nil }
@@ -97,7 +93,7 @@ public struct RecurrenceRule: Equatable, Hashable {
         var parts = ["FREQ=\(frequency.rawValue)"]
         if interval > 1 { parts.append("INTERVAL=\(interval)") }
         if !weekdays.isEmpty { parts.append("BYDAY=" + weekdays.sorted().map { Self.dayCodes[$0 - 1] }.joined(separator: ",")) }
-        parts += otherParts.map { "\($0.0)=\($0.1)" }
+        parts += otherParts
         switch end {
         case .never: break
         case .count(let n): parts.append("COUNT=\(n)")
@@ -140,12 +136,7 @@ public struct RecurrenceRule: Equatable, Hashable {
         case daily = "Every Day", weekly = "Every Week", monthly = "Every Month", yearly = "Every Year"
 
         public var rule: RecurrenceRule {
-            switch self {
-            case .daily: RecurrenceRule(frequency: .daily)
-            case .weekly: RecurrenceRule(frequency: .weekly)
-            case .monthly: RecurrenceRule(frequency: .monthly)
-            case .yearly: RecurrenceRule(frequency: .yearly)
-            }
+            RecurrenceRule(frequency: Frequency.allCases[Preset.allCases.firstIndex(of: self)!])
         }
     }
 

@@ -59,9 +59,8 @@ public final class EventWriter {
 
     /// Saves the detail popover's edits. `series` is the master's data when `scope` is `.series`.
     public func save(_ event: EventInstance, original: EventDraft, draft: EventDraft, scope: Scope, series: Series?) {
-        let toSeries = scope == .series && event.recurringEventId != nil
-        let targetId = toSeries ? event.recurringEventId! : event.id
-        // a repeat change always belongs to the series (or the one-off becoming one)
+        let target = Self.target(event, scope)
+        let toSeries = target.series != nil
         let fields = draft.patchBody(from: original, seriesTimes: toSeries ? series.map { ($0.start, $0.end) } : nil)
         let moved = draft.calendarKey != original.calendarKey
         // without the master's times and rule, a series write would move the whole series to this
@@ -79,15 +78,12 @@ public final class EventWriter {
             if toSeries, let series, draft.recurrence != original.recurrence {
                 fields["recurrence"] = RecurrenceRule.replacing(draft.recurrence, in: series.recurrence, allDay: draft.allDay)
             }
-            enqueue(PendingWrite(
-                account: event.account, calendarId: event.calendarId, eventId: targetId, method: "PATCH",
-                path: GoogleCalendarAPI.eventPath(calendarId: event.calendarId, eventId: targetId),
-                query: ["sendUpdates": Self.sendUpdates(event)], body: fields,
-                ifMatch: toSeries ? series?.etag : event.etag, refreshSeries: toSeries ? targetId : nil,
-                summary: draft.summary, createdAt: now()))
+            enqueue(queued("PATCH", event, id: target.id, query: ["sendUpdates": Self.sendUpdates(event)], body: fields,
+                           ifMatch: toSeries ? series?.etag : event.etag, refreshSeries: target.series,
+                           summary: draft.summary))
         }
         if moved {
-            enqueueMove(event: event, targetId: targetId, draft: draft, toSeries: toSeries, series: series)
+            enqueueMove(event: event, target: target, draft: draft, series: series)
             updated.account = draft.account
             updated.calendarId = draft.calendarId
         }
@@ -99,72 +95,57 @@ public final class EventWriter {
 
     /// Same account: `events.move`. Another account: insert a copy there, then delete the original
     /// (offered only for events the user organizes, §6.1).
-    private func enqueueMove(event: EventInstance, targetId: String, draft: EventDraft, toSeries: Bool, series: Series?) {
+    private func enqueueMove(event: EventInstance, target: Target, draft: EventDraft, series: Series?) {
         if draft.account == event.account {
-            enqueue(PendingWrite(
-                account: event.account, calendarId: event.calendarId, eventId: targetId, method: "POST",
-                path: GoogleCalendarAPI.eventPath(calendarId: event.calendarId, eventId: targetId) + "/move",
-                query: ["destination": draft.calendarId, "sendUpdates": Self.sendUpdates(event)],
-                refreshSeries: toSeries ? targetId : nil, summary: draft.summary, createdAt: now()))
-        } else {
-            var copy = draft
-            if let series, toSeries {
-                // the series' first occurrence, shifted as far as this occurrence moved
-                copy.start = series.start.addingTimeInterval(draft.start.timeIntervalSince(event.start))
-                copy.end = series.end.addingTimeInterval(draft.end.timeIntervalSince(event.end))
-            } else if event.recurringEventId != nil && !toSeries {
-                // one occurrence moves alone, as a one-off event
-                copy.recurrence = nil
-            }
-            var body = copy.insertBody()
-            if let series, toSeries { body["recurrence"] = RecurrenceRule.replacing(draft.recurrence, in: series.recurrence, allDay: draft.allDay) }
-            var insert = PendingWrite(
-                account: draft.account, calendarId: draft.calendarId, eventId: targetId, method: "POST",
-                path: GoogleCalendarAPI.eventPath(calendarId: draft.calendarId), query: ["sendUpdates": "none"],
-                body: body, summary: draft.summary, createdAt: now())
-            insert.replaces = event.id
-            enqueue(insert)
-            enqueue(PendingWrite(
-                account: event.account, calendarId: event.calendarId, eventId: targetId, method: "DELETE",
-                path: GoogleCalendarAPI.eventPath(calendarId: event.calendarId, eventId: targetId),
-                query: ["sendUpdates": "none"], refreshSeries: toSeries ? targetId : nil,
-                summary: draft.summary, createdAt: now()))
+            enqueue(queued("POST", event, id: target.id, suffix: "/move",
+                           query: ["destination": draft.calendarId, "sendUpdates": Self.sendUpdates(event)],
+                           refreshSeries: target.series, summary: draft.summary))
+            return
         }
+        var copy = draft
+        if let series, target.series != nil {
+            // the series' first occurrence, shifted as far as this occurrence moved
+            copy.start = series.start.addingTimeInterval(draft.start.timeIntervalSince(event.start))
+            copy.end = series.end.addingTimeInterval(draft.end.timeIntervalSince(event.end))
+        } else if event.recurringEventId != nil {
+            // one occurrence moves alone, as a one-off event
+            copy.recurrence = nil
+        }
+        var body = copy.insertBody()
+        if let series, target.series != nil {
+            body["recurrence"] = RecurrenceRule.replacing(draft.recurrence, in: series.recurrence, allDay: draft.allDay)
+        }
+        var insert = PendingWrite(
+            account: draft.account, calendarId: draft.calendarId, eventId: target.id, method: "POST",
+            path: GoogleCalendarAPI.eventPath(calendarId: draft.calendarId), query: ["sendUpdates": "none"],
+            body: body, summary: draft.summary, createdAt: now())
+        insert.replaces = event.id
+        enqueue(insert)
+        enqueue(queued("DELETE", event, id: target.id, query: ["sendUpdates": "none"], refreshSeries: target.series,
+                       summary: draft.summary))
     }
 
     /// Accept / Decline / Maybe (§6, §6.2): `accepted`, `declined` or `tentative`.
     public func respond(_ event: EventInstance, response: String, scope: Scope) {
-        let toSeries = scope == .series && event.recurringEventId != nil
-        let targetId = toSeries ? event.recurringEventId! : event.id
-        enqueue(PendingWrite(
-            account: event.account, calendarId: event.calendarId, eventId: targetId, method: "PATCH",
-            path: GoogleCalendarAPI.eventPath(calendarId: event.calendarId, eventId: targetId),
-            query: ["sendUpdates": "all"], body: EventDraft.rsvpBody(attendees: event.attendees, response: response),
-            refreshSeries: toSeries ? targetId : nil, summary: event.summary, createdAt: now()))
+        let target = Self.target(event, scope)
+        let attendees = event.attendees.responding(response)
+        enqueue(queued("PATCH", event, id: target.id, query: ["sendUpdates": "all"],
+                       body: ["attendees": attendees.map(EventDraft.attendee)], refreshSeries: target.series))
         var updated = event
         updated.selfResponse = response
-        updated.attendees = event.attendees.map { a in
-            var a = a
-            if a.isSelf { a.responseStatus = response }
-            return a
-        }
+        updated.attendees = attendees
         try? cache.upsert([updated])
         engine.onChange()
         Task { await flush() }
     }
 
     public func delete(_ event: EventInstance, scope: Scope) {
-        let toSeries = scope == .series && event.recurringEventId != nil
-        let targetId = toSeries ? event.recurringEventId! : event.id
-        enqueue(PendingWrite(
-            account: event.account, calendarId: event.calendarId, eventId: targetId, method: "DELETE",
-            path: GoogleCalendarAPI.eventPath(calendarId: event.calendarId, eventId: targetId),
-            query: ["sendUpdates": Self.sendUpdates(event)], summary: event.summary, createdAt: now()))
-        try? cache.deleteEvent(account: event.account, calendarId: event.calendarId, id: event.id,
-                               series: toSeries ? targetId : nil)
+        let target = Self.target(event, scope)
+        enqueue(queued("DELETE", event, id: target.id, query: ["sendUpdates": Self.sendUpdates(event)]))
+        try? cache.deleteEvent(account: event.account, calendarId: event.calendarId, id: event.id, series: target.series)
         // an invitation someone else organized cannot be restored by Kalendar (§8.2)
-        undoableDelete = event.organizerSelf || event.attendees.isEmpty ? event : nil
-        lastDeleteScope = toSeries ? .series : .occurrence
+        undoableDelete = event.isInvitation ? nil : event
+        lastDeleteScope = target.series == nil ? .occurrence : .series
         engine.onChange()
         Task { await flush() }
     }
@@ -174,15 +155,9 @@ public final class EventWriter {
     public func undoDelete() {
         guard let event = undoableDelete else { return }
         undoableDelete = nil
-        let toSeries = lastDeleteScope == .series
-        let targetId = toSeries ? event.recurringEventId! : event.id
-        var copy = EventDraft(event, recurrence: nil).insertBody()
-        copy["attendees"] = nil
-        enqueue(PendingWrite(
-            account: event.account, calendarId: event.calendarId, eventId: targetId, method: "PATCH",
-            path: GoogleCalendarAPI.eventPath(calendarId: event.calendarId, eventId: targetId),
-            query: ["sendUpdates": "none"], body: ["status": "confirmed"],
-            refreshSeries: toSeries ? targetId : nil, fallbackBody: copy, summary: event.summary, createdAt: now()))
+        let target = Self.target(event, lastDeleteScope)
+        enqueue(queued("PATCH", event, id: target.id, query: ["sendUpdates": "none"], body: ["status": "confirmed"],
+                       refreshSeries: target.series, fallbackBody: EventDraft(event, recurrence: nil).insertBody(guests: false)))
         try? cache.upsert([event])
         engine.onChange()
         Task { await flush() }
@@ -190,12 +165,8 @@ public final class EventWriter {
 
     /// Duplicate (§7.1): a copy of this occurrence on the same calendar, without its guests.
     public func duplicate(_ event: EventInstance) {
-        var body = EventDraft(event, recurrence: nil).insertBody()
-        body["attendees"] = nil
-        enqueue(PendingWrite(
-            account: event.account, calendarId: event.calendarId, eventId: event.id, method: "POST",
-            path: GoogleCalendarAPI.eventPath(calendarId: event.calendarId), query: ["sendUpdates": "none"],
-            body: body, summary: event.summary, createdAt: now()))
+        enqueue(queued("POST", event, id: event.id, insert: true, query: ["sendUpdates": "none"],
+                       body: EventDraft(event, recurrence: nil).insertBody(guests: false)))
         Task { await flush() }
     }
 
@@ -203,6 +174,26 @@ public final class EventWriter {
     /// event without guests or to the user's copy of someone else's invitation.
     static func sendUpdates(_ event: EventInstance) -> String {
         event.organizerSelf && event.attendees.count > 1 ? "all" : "none"
+    }
+
+    /// The event a write goes to: this occurrence, or for `.series` the master; `series` is the
+    /// master id to refetch once the write lands.
+    struct Target { var id: String; var series: String? }
+
+    static func target(_ event: EventInstance, _ scope: Scope) -> Target {
+        if scope == .series, let master = event.recurringEventId { return Target(id: master, series: master) }
+        return Target(id: event.id, series: nil)
+    }
+
+    /// A write on `event`'s calendar about event `id`; `insert` posts to the calendar's events instead.
+    private func queued(_ method: String, _ event: EventInstance, id: String, insert: Bool = false, suffix: String = "",
+                        query: [String: String], body: [String: Any]? = nil, ifMatch: String? = nil,
+                        refreshSeries: String? = nil, fallbackBody: [String: Any]? = nil,
+                        summary: String? = nil) -> PendingWrite {
+        PendingWrite(account: event.account, calendarId: event.calendarId, eventId: id, method: method,
+                     path: GoogleCalendarAPI.eventPath(calendarId: event.calendarId, eventId: insert ? nil : id) + suffix,
+                     query: query, body: body, ifMatch: ifMatch, refreshSeries: refreshSeries,
+                     fallbackBody: fallbackBody, summary: summary ?? event.summary, createdAt: now())
     }
 
     private func enqueue(_ write: PendingWrite) {
@@ -261,10 +252,16 @@ public final class EventWriter {
             default:
                 if let fallback = write.fallbackBody {
                     // undo of a delete: Google refused to restore the event, so insert a copy
-                    try? cache.enqueue(PendingWrite(
-                        account: write.account, calendarId: write.calendarId, eventId: write.eventId, method: "POST",
-                        path: GoogleCalendarAPI.eventPath(calendarId: write.calendarId), query: ["sendUpdates": "none"],
-                        summary: write.summary, createdAt: now()).with(body: fallback))
+                    var insert = write
+                    insert.id = nil
+                    insert.method = "POST"
+                    insert.path = GoogleCalendarAPI.eventPath(calendarId: write.calendarId)
+                    insert.query = ["sendUpdates": "none"]
+                    insert.body = fallback
+                    insert.fallbackBody = nil
+                    insert.ifMatch = nil
+                    insert.refreshSeries = nil
+                    try? cache.enqueue(insert)
                 } else {
                     report(write, GoogleCalendarAPI.APIError.http(status).localizedDescription)
                     await refetch(write)
@@ -287,29 +284,27 @@ public final class EventWriter {
 
     /// A write Google accepted: its response becomes the cached event.
     private func landed(_ write: PendingWrite, data: Data) async {
+        let calendarId = write.query["destination"] ?? write.calendarId
+        let g = write.method == "DELETE" ? nil : try? JSONDecoder().decode(GoogleCalendarAPI.GoogleEvent.self, from: data)
+        // writes queued behind this one were made against the version it replaced
+        if let etag = g?.etag { try? cache.updateQueuedIfMatch(eventId: write.eventId, to: etag) }
         if write.path.hasSuffix("/move") {
             try? cache.deleteEvent(account: write.account, calendarId: write.calendarId, id: write.eventId,
                                    series: write.refreshSeries)
         }
-        // writes queued behind this one were made against the version it replaced
-        if write.method != "DELETE", let etag = try? JSONDecoder().decode(GoogleCalendarAPI.GoogleEvent.self, from: data).etag {
-            try? cache.updateQueuedIfMatch(eventId: write.eventId, to: etag)
-        }
         if let series = write.refreshSeries {
-            let calendarId = write.query["destination"] ?? write.calendarId
             await engine.refreshSeries(series, account: write.account, calendarId: calendarId)
-        } else if write.method != "DELETE",
-                  let g = try? JSONDecoder().decode(GoogleCalendarAPI.GoogleEvent.self, from: data) {
-            let calendarId = write.query["destination"] ?? write.calendarId
-            if let placeholder = write.replaces {
-                try? cache.deleteEvent(account: write.account, calendarId: calendarId, id: placeholder)
-            }
-            if g.isRecurringMaster {
-                // an inserted series: its occurrences, not the master, belong in the cache
-                await engine.refreshSeries(g.id, account: write.account, calendarId: calendarId)
-            } else if let instance = g.instance(account: write.account, calendarId: calendarId) {
-                try? cache.upsert([instance])
-            }
+            return
+        }
+        guard let g else { return }
+        if let placeholder = write.replaces {
+            try? cache.deleteEvent(account: write.account, calendarId: calendarId, id: placeholder)
+        }
+        if g.isRecurringMaster {
+            // an inserted series: its occurrences, not the master, belong in the cache
+            await engine.refreshSeries(g.id, account: write.account, calendarId: calendarId)
+        } else if let instance = g.instance(account: write.account, calendarId: calendarId) {
+            try? cache.upsert([instance])
         }
     }
 
@@ -336,14 +331,6 @@ public final class EventWriter {
         let title = write.summary.isEmpty ? "the event" : "“\(write.summary)”"
         error = reason.map { "Couldn't save \(title): \($0)" }
             ?? "\(title.prefix(1).uppercased() + title.dropFirst()) changed in Google Calendar, so your edit wasn't saved."
-    }
-}
-
-extension PendingWrite {
-    func with(body: Data) -> PendingWrite {
-        var w = self
-        w.body = body
-        return w
     }
 }
 

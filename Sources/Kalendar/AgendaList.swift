@@ -190,7 +190,7 @@ private struct EventContextMenu: View {
             Button("Busy") { actions.quickEdit(event) { $0.busy = true } }
             Button("Free") { actions.quickEdit(event) { $0.busy = false } }
         }
-        if event.organizerSelf || event.attendees.isEmpty {
+        if !event.isInvitation {
             Menu("Visibility") {
                 ForEach(["default", "public", "private", "confidential"], id: \.self) { v in
                     Button(v.capitalized) { actions.quickEdit(event) { $0.visibility = v } }

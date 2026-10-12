@@ -46,6 +46,17 @@ public struct Attendee: Codable, Equatable, Hashable {
     }
 }
 
+extension Array where Element == Attendee {
+    /// The list with the signed-in user's response set to `response`.
+    public func responding(_ response: String) -> [Attendee] {
+        map { a in
+            var a = a
+            if a.isSelf { a.responseStatus = response }
+            return a
+        }
+    }
+}
+
 /// One occurrence: a single event, or one instance of a recurring series.
 public struct EventInstance: Codable, Equatable, Hashable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "event"
@@ -82,6 +93,9 @@ public struct EventInstance: Codable, Equatable, Hashable, FetchableRecord, Pers
     /// The `CalendarInfo.key` of the event's calendar.
     public var calendarKey: String { "\(account)|\(calendarId)" }
     public var isDeclined: Bool { selfResponse == "declined" }
+    /// The user's copy of someone else's event with guests: Kalendar can change only the user's
+    /// own alerts, color and busy/free, and cannot restore it after a delete (§6, §8.2).
+    public var isInvitation: Bool { !organizerSelf && !attendees.isEmpty }
     /// Not yet accepted: drawn with an open circle (§4.3).
     public var isTentative: Bool { selfResponse == "needsAction" || selfResponse == "tentative" }
 }

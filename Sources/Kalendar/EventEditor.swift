@@ -15,13 +15,10 @@ struct EventEditor: View {
                 fields
                 if model.expanded || readOnly || !model.draft.attendees.isEmpty { attendees }
                 if model.expanded || readOnly { notes }
-                if let error = model.writer.error {
-                    Text(error)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.bad)
-                        .fixedSize(horizontal: false, vertical: true)
+                WriteError(writer: model.writer)
+                if model.isInvitation {
+                    RSVPButtons { model.respond($0) }.padding(.top, 6)
                 }
-                if model.isInvitation { rsvpRow }
                 if !readOnly {
                     Button { model.expanded.toggle() } label: {
                         Image(systemName: model.expanded ? "chevron.up" : "chevron.down")
@@ -157,17 +154,6 @@ struct EventEditor: View {
         }
     }
 
-    /// Maybe at the leading edge, Decline and Accept trailing (§6).
-    private var rsvpRow: some View {
-        HStack {
-            Button("Maybe") { model.respond("tentative") }
-            Spacer()
-            Button("Decline") { model.respond("declined") }
-            Button("Accept") { model.respond("accepted") }
-        }
-        .buttonStyle(.bordered)
-        .padding(.top, 6)
-    }
 
     /// (organizer), (optional), (me, optional) — §6.
     static func suffix(_ a: Attendee) -> String? {
@@ -230,7 +216,7 @@ private struct CalendarMenu: View {
     let model: EventEditorModel
 
     var body: some View {
-        let current = model.agenda.calendars.first { $0.key == model.draft.calendarKey }
+        let current = model.agenda.calendar(forKey: model.draft.calendarKey)
         let byAccount = Dictionary(grouping: model.writableCalendars, by: \.account)
         Menu {
             ForEach(byAccount.keys.sorted(), id: \.self) { account in
@@ -311,10 +297,7 @@ private struct CustomRepeat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Picker("Frequency", selection: $rule.frequency) {
-                Text("Daily").tag(RecurrenceRule.Frequency.daily)
-                Text("Weekly").tag(RecurrenceRule.Frequency.weekly)
-                Text("Monthly").tag(RecurrenceRule.Frequency.monthly)
-                Text("Yearly").tag(RecurrenceRule.Frequency.yearly)
+                ForEach(RecurrenceRule.Frequency.allCases, id: \.self) { Text($0.adjective).tag($0) }
             }
             Stepper("Every \(rule.interval) \(rule.frequency.unit)\(rule.interval == 1 ? "" : "s")", value: $rule.interval, in: 1...99)
             if rule.frequency == .weekly {
@@ -436,10 +419,13 @@ private struct AlertRows: View {
 private struct TimeZoneMenu: View {
     @Binding var identifier: String
 
+    /// Built once: about 600 zones, with readable titles.
+    private static let zones = TimeZone.knownTimeZoneIdentifiers.map { ($0, $0.replacingOccurrences(of: "_", with: " ")) }
+
     var body: some View {
         Menu(identifier.replacingOccurrences(of: "_", with: " ")) {
-            ForEach(TimeZone.knownTimeZoneIdentifiers, id: \.self) { id in
-                Button(id.replacingOccurrences(of: "_", with: " ")) { identifier = id }
+            ForEach(Self.zones, id: \.0) { zone in
+                Button(zone.1) { identifier = zone.0 }
             }
         }
         .fixedSize()
@@ -459,7 +445,7 @@ private struct AddInvitee: View {
             .onSubmit {
                 let email = text.trimmingCharacters(in: .whitespaces)
                 guard email.contains("@"), !model.draft.attendees.contains(where: { $0.email == email }) else { return }
-                if model.draft.attendees.isEmpty, let me = model.agenda.calendars.first(where: { $0.key == model.draft.calendarKey }) {
+                if model.draft.attendees.isEmpty, let me = model.agenda.calendar(forKey: model.draft.calendarKey) {
                     // the organizer is listed too, as Google does
                     model.draft.attendees.append(Attendee(email: me.account, displayName: nil, isSelf: true,
                                                           organizer: true, optional: false, responseStatus: "accepted"))
@@ -468,5 +454,36 @@ private struct AddInvitee: View {
                                                       optional: false, responseStatus: "needsAction"))
                 text = ""
             }
+    }
+}
+
+/// Maybe at the leading edge, Decline and Accept trailing (§6, §6.2).
+struct RSVPButtons: View {
+    let respond: (String) -> Void
+
+    var body: some View {
+        HStack {
+            Button("Maybe") { respond("tentative") }
+            Spacer()
+            Button("Decline") { respond("declined") }
+            Button("Accept") { respond("accepted") }
+        }
+        .buttonStyle(.bordered)
+    }
+}
+
+/// The last write that failed (§18.3), in red.
+struct WriteError: View {
+    let writer: EventWriter
+    var padding: CGFloat = 0
+
+    var body: some View {
+        if let error = writer.error {
+            Text(error)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.bad)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(padding)
+        }
     }
 }

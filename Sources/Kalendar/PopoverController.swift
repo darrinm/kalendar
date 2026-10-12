@@ -66,10 +66,15 @@ final class PopoverController: NSObject, NSPopoverDelegate {
     /// the recurring-event question (§8.1), so everything stays open.
     private func closeChild() -> Bool {
         if let editor, !editor.shouldClose() { return false }
+        dismissChild()
+        return true
+    }
+
+    /// Closes the child popover without asking; any unsaved edits are dropped.
+    private func dismissChild() {
         editor = nil
         detail?.close()
         detail = nil
-        return true
     }
 
     @discardableResult
@@ -125,11 +130,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         if (notification.object as? NSPopover) === popover {
             // normally closeChild already ran in popoverShouldClose; if the main popover closed some
             // other way, the detail must not outlive it, even when its save was cancelled
-            if !closeChild() {
-                editor = nil
-                detail?.close()
-                detail = nil
-            }
+            if !closeChild() { dismissChild() }
             model.agenda.isVisible = false
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
             keyMonitor = nil
@@ -270,10 +271,8 @@ final class PopoverModel {
         var draft = original
         change(&draft)
         guard draft != original, let scope = Dialogs.scope(for: event) else { return }
-        Task {
-            let series = scope == .series ? await writer.series(of: event) : nil
-            writer.save(event, original: original, draft: draft, scope: scope, series: series)
-        }
+        // color, busy/free and visibility need none of the series' own data (its times or rule)
+        writer.save(event, original: original, draft: draft, scope: scope, series: nil)
     }
 
     func setSelected(_ selected: Bool, calendar: CalendarInfo) {

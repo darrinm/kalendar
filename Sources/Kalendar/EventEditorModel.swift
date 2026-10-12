@@ -24,7 +24,8 @@ final class EventEditorModel {
         original = draft
         self.draft = draft
         writer.clearError()
-        if event.recurringEventId != nil {
+        // the series' rule shows only in the editable fields; an invitation hides Repeat
+        if event.recurringEventId != nil && !event.isInvitation {
             Task { await loadSeries() }
         }
     }
@@ -40,7 +41,7 @@ final class EventEditorModel {
 
     /// The user's copy of someone else's invitation: Google lets an attendee change only their own
     /// alerts, color and busy/free. Everything else is read-only (§6).
-    var isInvitation: Bool { !event.organizerSelf && !event.attendees.isEmpty }
+    var isInvitation: Bool { event.isInvitation }
     var isRecurring: Bool { event.recurringEventId != nil }
     var hasChanges: Bool { draft != original }
 
@@ -105,7 +106,7 @@ final class EventEditorModel {
     /// The popup alerts shown: the event's own, or the calendar's defaults when it uses them.
     var effectiveAlerts: [Int] {
         draft.reminders.useDefault
-            ? (agenda.calendars.first { $0.key == draft.calendarKey }?.defaultReminders ?? [])
+            ? (agenda.calendar(forKey: draft.calendarKey)?.defaultReminders ?? [])
             : draft.reminders.minutes
     }
 

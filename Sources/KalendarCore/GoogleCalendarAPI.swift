@@ -123,11 +123,11 @@ public enum GoogleCalendarAPI {
     }
 
     /// A queued write as a request.
-    public static func writeRequest(_ w: PendingWrite, body: Data? = nil) -> Builder {
+    public static func writeRequest(_ w: PendingWrite) -> Builder {
         { token in
             var query = w.query.mapValues { Optional($0) }
             if w.method != "DELETE" { query["fields"] = eventFields }
-            var r = request(w.path, query, method: w.method, body: body ?? w.body, accessToken: token)
+            var r = request(w.path, query, method: w.method, body: w.body, accessToken: token)
             if let etag = w.ifMatch { r.setValue(etag, forHTTPHeaderField: "If-Match") }
             return r
         }

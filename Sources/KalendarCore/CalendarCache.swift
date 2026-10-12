@@ -23,7 +23,7 @@ public final class CalendarCache: @unchecked Sendable {
         return support.appendingPathComponent("Kalendar/cache.sqlite").path
     }
 
-    private static var migrator: DatabaseMigrator {
+    static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
         m.registerMigration("v1") { db in
             try db.create(table: "calendar") { t in
@@ -129,6 +129,15 @@ public final class CalendarCache: @unchecked Sendable {
                 t.column("photoURL", .text)
                 t.primaryKey(["account", "email"])
             }
+        }
+        m.registerMigration("v6-task-due-day") { db in
+            // `due` held local midnight as an instant, which moves to another day when the time zone
+            // changes; `dueDay` holds the calendar day. Existing rows were written in this time zone.
+            try db.alter(table: "task") { t in t.add(column: "dueDay", .text) }
+            try db.execute(sql: "UPDATE task SET dueDay = date(due, 'localtime') WHERE due IS NOT NULL")
+            try db.drop(index: "task_due")
+            try db.alter(table: "task") { t in t.drop(column: "due") }
+            try db.create(index: "task_dueDay", on: "task", columns: ["dueDay"])
         }
         return m
     }
@@ -438,11 +447,14 @@ public final class CalendarCache: @unchecked Sendable {
     }
 
     /// Tasks due in [from, to), and incomplete ones due before `from` (shown as overdue today, §4.3).
+    /// The days are compared as "YYYY-MM-DD", in the current time zone.
     public func tasks(dueFrom from: Date, to: Date, overdueBefore today: Date) throws -> [TaskItem] {
-        try db.read { db in
-            try TaskItem.filter(Column("due") != nil && ((Column("due") >= from && Column("due") < to)
-                                || (Column("due") < today && Column("completed") == false)))
-                .order(Column("due")).fetchAll(db)
+        let day = { GoogleCalendarAPI.ymd($0, calendar: .current) }
+        let (from, to, today) = (day(from), day(to), day(today))
+        return try db.read { db in
+            try TaskItem.filter(Column("dueDay") != nil && ((Column("dueDay") >= from && Column("dueDay") < to)
+                                || (Column("dueDay") < today && Column("completed") == false)))
+                .order(Column("dueDay")).fetchAll(db)
         }
     }
 

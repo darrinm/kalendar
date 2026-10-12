@@ -50,8 +50,8 @@ final class AgendaModel {
     private(set) var calendars: [CalendarInfo] = []
     /// Invitations awaiting a reply (§6.2): the badge count and the Notifications popover.
     private(set) var invitations: [EventInstance] = []
-    /// The selected row's key: an event's or a task's.
-    var selectedEvent: String?
+    /// The selected row: an `EventInstance.key` or a `TaskItem.key`.
+    var selection: String?
     private(set) var taskLists: [TaskList] = []
     /// The Tasks view (§10) replaces the grid and the agenda.
     var showsTasks = false { didSet { if showsTasks && !oldValue { reloadTasks() } } }

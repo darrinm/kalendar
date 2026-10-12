@@ -6,8 +6,8 @@ jobs:
   build-test:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v5
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}

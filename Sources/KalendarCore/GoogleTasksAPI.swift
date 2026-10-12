@@ -56,10 +56,12 @@ public enum GoogleTasksAPI {
         var position: String?
         public var deleted: Bool?
 
-        public func task(account: String, listId: String, calendar: Calendar = .current) -> TaskItem {
-            TaskItem(account: account, listId: listId, id: id, title: title ?? "", notes: notes,
-                     completed: status == "completed", due: due.flatMap { GoogleCalendarAPI.localDay($0, calendar: calendar) },
-                     parent: parent, position: position ?? "")
+        /// "2026-09-28T00:00:00.000Z" is the calendar day Sep 28, kept as "2026-09-28".
+        public func task(account: String, listId: String) -> TaskItem {
+            var t = TaskItem(account: account, listId: listId, id: id, title: title ?? "", notes: notes,
+                             completed: status == "completed", parent: parent, position: position ?? "")
+            t.dueDay = due.map { String($0.prefix(10)) }
+            return t
         }
 
     }

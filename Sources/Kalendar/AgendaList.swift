@@ -22,14 +22,14 @@ struct AgendaList: View {
                                 .id(section.day)
                             ForEach(section.allDay, id: \.key) { event in
                                 AllDayPill(event: event, color: model.color(for: event),
-                                           isSelected: model.selectedEvent == event.key)
+                                           isSelected: model.selection == event.key)
                             }
                             ForEach(section.tasks, id: \.key) { task in
                                 TaskRow(task: task, actions: actions)
                             }
                             ForEach(section.timed, id: \.key) { event in
                                 EventRow(event: event, model: model, now: context.date,
-                                         isSelected: model.selectedEvent == event.key,
+                                         isSelected: model.selection == event.key,
                                          showsJoin: event.key == join, actions: actions)
                             }
                             if section.isEmpty {
@@ -55,8 +55,8 @@ struct AgendaList: View {
                 if let target = model.scrollTarget { proxy.scrollTo(target, anchor: .top) }
             }
             // keyboard selection (§11) keeps the selected row on screen
-            .onChange(of: model.selectedEvent) {
-                if let key = model.selectedEvent { proxy.scrollTo(key) }
+            .onChange(of: model.selection) {
+                if let key = model.selection { proxy.scrollTo(key) }
             }
         }
     }
@@ -162,7 +162,7 @@ private struct EventRow: View {
         .contentShape(Rectangle())
         .background(AnchorView(view: $anchor))
         .onTapGesture {
-            model.selectedEvent = event.key
+            model.selection = event.key
             actions.openEvent(event, anchor: anchor)
         }
         .contextMenu { EventContextMenu(event: event, actions: actions) }

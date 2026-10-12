@@ -215,7 +215,7 @@ struct TaskRow: View {
         .padding(.leading, CGFloat(depth) * 20)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .rowSelection(actions.agenda.selectedEvent == task.key)
+        .rowSelection(actions.agenda.selection == task.key)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .background(AnchorView(view: $anchor))
@@ -306,8 +306,8 @@ struct TasksView: View {
                     .padding(.vertical, 6)
                 }
                 // keyboard selection (§11) keeps the selected row on screen
-                .onChange(of: agenda.selectedEvent) {
-                    if let key = agenda.selectedEvent { proxy.scrollTo(key) }
+                .onChange(of: agenda.selection) {
+                    if let key = agenda.selection { proxy.scrollTo(key) }
                 }
             }
         }

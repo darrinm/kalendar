@@ -132,7 +132,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         if (notification.object as? NSPopover) === detail {
             detail = nil
-            model.agenda.selectedEvent = nil
+            model.agenda.selection = nil
         }
         if (notification.object as? NSPopover) === popover {
             // normally closeChild already ran in popoverShouldClose; if the main popover closed some
@@ -220,7 +220,7 @@ final class PopoverModel {
         agenda.isVisible = true
         agenda.searchMode = false
         agenda.query = ""
-        agenda.selectedEvent = nil
+        agenda.selection = nil
         agenda.resetToToday()
         // a double-clicked day dates only the entry it started
         if input.isEmpty { newItem.defaultDay = nil }
@@ -256,7 +256,7 @@ final class PopoverModel {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             // unless the user started something else in the meantime
             guard let self, Preferences.shared.goToTodayAfterAdding, input.isEmpty, !agenda.searchMode,
-                  agenda.selectedEvent == nil else { return }
+                  agenda.selection == nil else { return }
             agenda.resetToToday()
         }
     }
@@ -280,7 +280,7 @@ final class PopoverModel {
         let editor = EventEditorModel(event: event, agenda: agenda, writer: writer)
         // to the left of the Mini Window (§6)
         if showChild(anchor, AnyView(EventEditor(model: editor)), 300, .minX, editor.shouldClose) {
-            agenda.selectedEvent = event.key
+            agenda.selection = event.key
         }
     }
 
@@ -289,14 +289,14 @@ final class PopoverModel {
         guard let anchor = anchor ?? contentView() else { return }
         let editor = TaskEditorModel(task: task, agenda: agenda, writer: writer)
         if showChild(anchor, AnyView(TaskEditor(model: editor)), 300, .minX, editor.shouldClose) {
-            agenda.selectedEvent = task.key
+            agenda.selection = task.key
         }
     }
 
     /// ≡ › Tasks (⌘R) and ≡ › Month (⌘3) (§10).
     func showTasks(_ shown: Bool) {
         agenda.showsTasks = shown
-        agenda.selectedEvent = nil
+        agenda.selection = nil
     }
 
     /// Go to Date… (§4.4): a date picker beside the Mini Window.
@@ -346,7 +346,7 @@ final class PopoverModel {
 
     /// The selected row, if it is still listed; stops at the first match.
     private var selectedItem: ListItem? {
-        guard let key = agenda.selectedEvent else { return nil }
+        guard let key = agenda.selection else { return nil }
         return rows.first { $0.key == key }
     }
 
@@ -354,8 +354,8 @@ final class PopoverModel {
         let items = listItems
         guard !items.isEmpty else { return }
         // with nothing selected, ↓ starts at the first row and ↑ at the last
-        let index = items.firstIndex { $0.key == agenda.selectedEvent }.map { $0 + delta } ?? (delta > 0 ? 0 : items.count - 1)
-        agenda.selectedEvent = items[min(max(index, 0), items.count - 1)].key
+        let index = items.firstIndex { $0.key == agenda.selection }.map { $0 + delta } ?? (delta > 0 ? 0 : items.count - 1)
+        agenda.selection = items[min(max(index, 0), items.count - 1)].key
     }
 
     /// Enter, ⌘E: the selection's detail popover beside the Mini Window.
@@ -376,7 +376,7 @@ final class PopoverModel {
     func startNewEntry() {
         if agenda.searchMode { toggleSearch() }
         agenda.showsTasks = false
-        agenda.selectedEvent = nil
+        agenda.selection = nil
         focusInput()
     }
 
@@ -385,7 +385,7 @@ final class PopoverModel {
         guard let series = event.recurringEventId,
               let next = try? agenda.cache.occurrence(after: event, in: series, forward: forward) else { return }
         agenda.select(next.start)
-        agenda.selectedEvent = next.key
+        agenda.selection = next.key
     }
 
     /// Copy (§7.1): the event as text, for pasting into a message.
@@ -400,7 +400,7 @@ final class PopoverModel {
 
     func deleteTask(_ task: TaskItem) {
         writer.deleteTask(task)
-        agenda.selectedEvent = nil
+        agenda.selection = nil
     }
 
     /// ⌫ and Delete Item: the selected event or task.
@@ -434,7 +434,7 @@ final class PopoverModel {
     func delete(_ event: EventInstance) {
         guard let scope = Dialogs.scope(for: event) else { return }
         writer.delete(event, scope: scope)
-        agenda.selectedEvent = nil
+        agenda.selection = nil
     }
 
     func respond(_ event: EventInstance, _ response: String) {
@@ -474,7 +474,7 @@ final class PopoverModel {
             return true
         }
         // the list's selection (§11): ↑ ↓ move it, Enter opens it; in search once ⌘↓ chose a result
-        let listHasKeys = (input.isEmpty && !agenda.searchMode) || (agenda.searchMode && agenda.selectedEvent != nil)
+        let listHasKeys = (input.isEmpty && !agenda.searchMode) || (agenda.searchMode && agenda.selection != nil)
         if listHasKeys, flags.isEmpty {
             if event.keyCode == 126 { moveSelection(by: -1); return true }
             if event.keyCode == 125 { moveSelection(by: 1); return true }
@@ -495,7 +495,7 @@ final class PopoverModel {
         }
         // ⌘↓: from the search field to the first result (§11)
         if agenda.searchMode, flags == [.command], event.keyCode == 125 {
-            agenda.selectedEvent = listItems.first?.key
+            agenda.selection = listItems.first?.key
             return true
         }
         // ⌫ / ⌘⌫ delete the selected event (§4.3)

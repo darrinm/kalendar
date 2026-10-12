@@ -246,8 +246,9 @@ public struct TaskItem: Codable, Equatable, Hashable, FetchableRecord, Persistab
     public var title: String
     public var notes: String?
     public var completed: Bool
-    /// Local midnight of the due date.
-    public var due: Date?
+    /// The due date as Google keeps it, "2026-09-28": a calendar day, not an instant, so it stays
+    /// the same day when the Mac's time zone changes.
+    public var dueDay: String?
     public var parent: String?
     /// Google's sort key within the list ("My Order").
     public var position: String
@@ -263,8 +264,14 @@ public struct TaskItem: Codable, Equatable, Hashable, FetchableRecord, Persistab
         self.title = title
         self.notes = notes
         self.completed = completed
-        self.due = due
         self.parent = parent
         self.position = position
+        self.due = due
+    }
+
+    /// Local midnight of the due date, in the current time zone.
+    public var due: Date? {
+        get { dueDay.flatMap { GoogleCalendarAPI.localDay($0, calendar: .current) } }
+        set { dueDay = newValue.map { GoogleCalendarAPI.ymd($0, calendar: .current) } }
     }
 }

@@ -1,4 +1,5 @@
 // Google Tasks (§10, §18.2): sync, the cache's agenda query, and writes through the queue.
+import GRDB
 import XCTest
 @testable import KalendarCore
 
@@ -218,5 +219,36 @@ final class TasksTests: XCTestCase {
         try cache.replaceTaskLists([TaskList(account: me, id: "d", title: "Zed's list"),
                                     TaskList(account: me, id: "b", title: "Beach")], account: me)
         XCTAssertEqual(try cache.taskLists().map(\.id), ["d", "b"])
+    }
+
+    /// A due date is a calendar day: it stays Sep 28 whatever the time zone (§18.2).
+    func testDueDayDoesNotMoveWithTheTimeZone() throws {
+        var t = task("a")
+        t.dueDay = "2026-09-28"
+        try cache.upsertTask(t)
+        let saved = try XCTUnwrap(cache.task(account: me, listId: "L1", id: "a"))
+        XCTAssertEqual(saved.dueDay, "2026-09-28")
+        var tokyo = Calendar(identifier: .gregorian)
+        tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        let midnight = try XCTUnwrap(GoogleCalendarAPI.localDay(saved.dueDay!, calendar: tokyo))
+        XCTAssertEqual(tokyo.component(.day, from: midnight), 28)
+    }
+
+    /// Databases from before v6 kept `due` as local midnight; the migration turns it into the day.
+    func testMigrationKeepsExistingDueDates() throws {
+        let path = NSTemporaryDirectory() + "kalendar-v5-\(UUID().uuidString).sqlite"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let queue = try DatabaseQueue(path: path)
+        try CalendarCache.migrator.migrate(queue, upTo: "v4-contacts")
+        let midnight = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 28))!
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO task (account, listId, id, title, completed, due, position)
+                VALUES ('me', 'L1', 'a', 'Rent', 0, ?, '1')
+                """, arguments: [midnight])
+        }
+        try CalendarCache.migrator.migrate(queue)
+        let day = try queue.read { try String.fetchOne($0, sql: "SELECT dueDay FROM task") }
+        XCTAssertEqual(day, "2026-09-28")
     }
 }

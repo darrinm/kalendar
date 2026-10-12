@@ -32,6 +32,9 @@ public final class SyncEngine {
     @ObservationIgnored private let cache: CalendarCache
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var running: Task<Void, Never>?
+    /// Visibility writes still in flight, by calendar key. A sync that fetched the calendar list
+    /// before the write landed would otherwise put the old value back.
+    @ObservationIgnored private var pendingSelected: [String: Bool] = [:]
     @ObservationIgnored private var pending = false
 
     static let windowRadius: TimeInterval = 365 * 86400
@@ -73,6 +76,11 @@ public final class SyncEngine {
                 Log.sync.error("sync \(account.email, privacy: .private) failed: \(error.localizedDescription)")
                 failure = error.localizedDescription
             }
+            // signed out while this account synced: drop what the sync wrote after sign-out deleted it
+            if !accounts.accounts.contains(where: { $0.email == account.email }) {
+                try? cache.deleteAccount(account.email)
+                changed()
+            }
         }
         state = failure.map(State.failed) ?? .idle
         lastSync = now()
@@ -87,6 +95,9 @@ public final class SyncEngine {
             listed += r.calendars(account: account)
             page = r.nextPageToken
         } while page != nil
+        for i in listed.indices {
+            if let selected = pendingSelected[listed[i].key] { listed[i].selected = selected }
+        }
         try cache.replaceCalendars(listed, account: account)
         changed()
 
@@ -118,20 +129,23 @@ public final class SyncEngine {
     private func fullSync(_ calendar: CalendarInfo) async throws {
         let from = Calendar.current.startOfDay(for: now()).addingTimeInterval(-Self.windowRadius)
         let to = from.addingTimeInterval(2 * Self.windowRadius)
-        var instances: [EventInstance] = []
+
+        // token first: a change made while the window downloads is then replayed by the next
+        // incremental sync instead of falling between the two passes
+        var token: String?
         var page: String?
+        repeat {
+            let r = try await events(calendar, GoogleCalendarAPI.tokenPassRequest(calendarId: calendar.id, pageToken: page))
+            token = r.nextSyncToken ?? token
+            page = r.nextPageToken
+        } while page != nil
+
+        var instances: [EventInstance] = []
+        page = nil
         repeat {
             let r = try await events(calendar, GoogleCalendarAPI.windowRequest(
                 calendarId: calendar.id, from: from, to: to, pageToken: page))
             instances += (r.items ?? []).compactMap { $0.instance(account: calendar.account, calendarId: calendar.id) }
-            page = r.nextPageToken
-        } while page != nil
-
-        var token: String?
-        page = nil
-        repeat {
-            let r = try await events(calendar, GoogleCalendarAPI.tokenPassRequest(calendarId: calendar.id, pageToken: page))
-            token = r.nextSyncToken ?? token
             page = r.nextPageToken
         } while page != nil
 
@@ -155,7 +169,14 @@ public final class SyncEngine {
             nextToken = r.nextSyncToken ?? nextToken
             page = r.nextPageToken
         } while page != nil
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else {
+            if nextToken != token {
+                var updated = calendar
+                updated.syncToken = nextToken
+                try cache.saveCalendar(updated)
+            }
+            return
+        }
 
         var upserts: [EventInstance] = []
         var deleted = Set<String>()
@@ -220,16 +241,16 @@ public final class SyncEngine {
     /// Shows or hides a calendar here and in Google Calendar (§12). The cache changes first, so the
     /// UI updates at once; a failed write puts it back.
     public func setSelected(_ selected: Bool, calendar: CalendarInfo) async throws {
-        var updated = calendar
-        updated.selected = selected
-        try cache.saveCalendar(updated)
+        pendingSelected[calendar.key] = selected
+        defer { pendingSelected[calendar.key] = nil }
+        try cache.setSelected(selected, account: calendar.account, calendarId: calendar.id)
         changed()
         do {
             let (_, status) = try await accounts.sendAuthorized(
                 for: calendar.account, GoogleCalendarAPI.setSelectedRequest(calendarId: calendar.id, selected: selected))
             try GoogleCalendarAPI.checkStatus(status)
         } catch {
-            try cache.saveCalendar(calendar)
+            try cache.setSelected(calendar.selected, account: calendar.account, calendarId: calendar.id)
             changed()
             throw error
         }

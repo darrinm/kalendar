@@ -100,13 +100,19 @@ public final class CalendarCache: @unchecked Sendable {
     /// Case-insensitive substring search over selected calendars (§9). `All` is title, location,
     /// notes and attendee names and emails.
     public func search(_ text: String, scope: SearchScope) throws -> [EventInstance] {
-        let pattern = "%\(text.replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_"))%"
+        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_")
+        let pattern = "%\(escaped)%"
+        // attendees is a JSON array; match only each attendee's name and email, not the JSON keys
+        let invitees = "EXISTS (SELECT 1 FROM json_each(event.attendees) WHERE "
+            + "json_extract(value, '$.email') LIKE :p ESCAPE '\\' "
+            + "OR json_extract(value, '$.displayName') LIKE :p ESCAPE '\\')"
         let condition: String = switch scope {
         case .title: "event.summary LIKE :p ESCAPE '\\'"
         case .location: "event.location LIKE :p ESCAPE '\\'"
-        case .invitees: "event.attendees LIKE :p ESCAPE '\\'"
+        case .invitees: invitees
         case .all: "(event.summary LIKE :p ESCAPE '\\' OR event.location LIKE :p ESCAPE '\\' "
-            + "OR event.notes LIKE :p ESCAPE '\\' OR event.attendees LIKE :p ESCAPE '\\')"
+            + "OR event.notes LIKE :p ESCAPE '\\' OR \(invitees))"
         }
         return try db.read { db in
             try EventInstance.fetchAll(db, sql: """
@@ -158,6 +164,14 @@ public final class CalendarCache: @unchecked Sendable {
         try db.write { try calendar.save($0) }
     }
 
+    /// Changes only the calendar's visibility, leaving its sync state as the sync engine last wrote it.
+    public func setSelected(_ selected: Bool, account: String, calendarId: String) throws {
+        try db.write { db in
+            _ = try CalendarInfo.filter(Column("account") == account && Column("id") == calendarId)
+                .updateAll(db, Column("selected").set(to: selected))
+        }
+    }
+
     public func replaceEventColors(_ colors: [EventColor], account: String) throws {
         try db.write { db in
             try EventColor.filter(Column("account") == account).deleteAll(db)
@@ -178,7 +192,11 @@ public final class CalendarCache: @unchecked Sendable {
                              deletedIds: Set<String>, replacedSeries: [String: [EventInstance]]) throws {
         try db.write { db in
             let calendarRows = EventInstance.filter(Column("account") == account && Column("calendarId") == calendarId)
-            if !deletedIds.isEmpty { try calendarRows.filter(deletedIds.contains(Column("id"))).deleteAll(db) }
+            // a deleted recurring master arrives as a bare cancelled id, so its instances go too
+            if !deletedIds.isEmpty {
+                try calendarRows.filter(deletedIds.contains(Column("id")) || deletedIds.contains(Column("recurringEventId")))
+                    .deleteAll(db)
+            }
             for (series, instances) in replacedSeries {
                 try calendarRows.filter(Column("recurringEventId") == series || Column("id") == series).deleteAll(db)
                 for e in instances { try e.save(db) }

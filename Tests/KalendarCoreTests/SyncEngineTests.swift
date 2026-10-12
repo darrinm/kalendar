@@ -11,11 +11,14 @@ private final class StubVault: TokenVault {
 private final class FakeGoogle: @unchecked Sendable {
     var handler: (URLRequest, [String: String]) -> (Int, String) = { _, _ in (404, "{}") }
     var log: [String] = []
+    /// Holds PATCH requests this long, to overlap them with a sync.
+    var patchDelay: UInt64 = 0
 
     func callAsFunction(_ request: URLRequest) async throws -> (Data, URLResponse) {
         let url = request.url!
         let query = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        if request.httpMethod == "PATCH", patchDelay > 0 { try await Task.sleep(nanoseconds: patchDelay) }
         let (status, body): (Int, String)
         if url.host == "oauth2.googleapis.com" {
             (status, body) = (200, #"{"access_token":"at","expires_in":3600}"#)
@@ -178,6 +181,28 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(try cache.search("Sam Lee", scope: .invitees).count, 1)
         XCTAssertEqual(try cache.search("notes", scope: .all).count, 1)
         XCTAssertEqual(try cache.search("%", scope: .all).count, 0)
+        XCTAssertEqual(try cache.search("\\", scope: .all).count, 0)
+        // the attendees column is JSON; its keys must not match
+        XCTAssertEqual(try cache.search("displayName", scope: .invitees).count, 0)
+        XCTAssertEqual(try cache.search("sam@", scope: .invitees).count, 1)
+    }
+
+    func testDeletedSeriesRemovesItsInstances() async throws {
+        serveFirstSync(events: [
+            Self.timed("w_1", "Weekly", start: "2026-10-12T20:00:00Z", end: "2026-10-12T21:00:00Z", recurringEventId: "w"),
+            Self.timed("w_2", "Weekly", start: "2026-10-19T20:00:00Z", end: "2026-10-19T21:00:00Z", recurringEventId: "w"),
+        ])
+        await engine.syncAll()
+        // Google reports a deleted series as its master's id and status only
+        let first = google.handler
+        google.handler = { request, q in
+            guard let token = q["syncToken"] else { return first(request, q) }
+            return request.url!.path.contains("primary") && token == "t1"
+                ? (200, #"{"items":[{"id":"w","status":"cancelled"}],"nextSyncToken":"t2"}"#)
+                : (200, #"{"items":[],"nextSyncToken":"t2"}"#)
+        }
+        await engine.syncAll()
+        XCTAssertTrue(try cache.search("Weekly", scope: .title).isEmpty)
     }
 
     func testSetSelectedWritesGoogleAndRevertsOnFailure() async throws {
@@ -188,6 +213,7 @@ final class SyncEngineTests: XCTestCase {
         google.handler = { request, _ in request.httpMethod == "PATCH" ? (200, #"{"id":"x","selected":false}"#) : (404, "{}") }
         try await engine.setSelected(false, calendar: primary)
         XCTAssertEqual(try cache.calendars().first { $0.primary }?.selected, false)
+        XCTAssertEqual(try cache.calendars().first { $0.primary }?.syncToken, "t1")
         XCTAssertTrue(google.log.last!.hasPrefix("PATCH /calendar/v3/users/me/calendarList/primary@example.com"))
 
         let hidden = try XCTUnwrap(try cache.calendars().first { $0.primary })
@@ -196,6 +222,25 @@ final class SyncEngineTests: XCTestCase {
             try await engine.setSelected(true, calendar: hidden)
             XCTFail("expected failure")
         } catch {}
+        XCTAssertEqual(try cache.calendars().first { $0.primary }?.selected, false)
+    }
+
+    /// A sync that lists calendars while a visibility write is in flight keeps the new value.
+    func testSyncDuringVisibilityWriteKeepsTheNewValue() async throws {
+        serveFirstSync(events: [])
+        await engine.syncAll()
+        let primary = try XCTUnwrap(try cache.calendars().first { $0.primary })
+
+        let listing = google.handler
+        google.handler = { request, q in
+            if request.httpMethod == "PATCH" { return (200, #"{"id":"x","selected":false}"#) }
+            if q["syncToken"] != nil { return (200, #"{"items":[],"nextSyncToken":"t1"}"#) }
+            return listing(request, q)   // the calendar list still says selected: true
+        }
+        google.patchDelay = 200_000_000
+        let write = Task { try await engine.setSelected(false, calendar: primary) }
+        await engine.syncAll()
+        try await write.value
         XCTAssertEqual(try cache.calendars().first { $0.primary }?.selected, false)
     }
 

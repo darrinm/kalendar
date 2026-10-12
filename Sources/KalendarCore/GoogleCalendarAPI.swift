@@ -100,11 +100,19 @@ public enum GoogleCalendarAPI {
                   body: try? JSONSerialization.data(withJSONObject: ["selected": selected]), accessToken: $0) }
     }
 
-    static func iso(_ date: Date) -> String {
+    // ISO8601DateFormatter is thread-safe; building one per event made each sync page allocate thousands
+    static let internetDate: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
-        return f.string(from: date)
-    }
+        return f
+    }()
+    static let internetDateFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    static func iso(_ date: Date) -> String { internetDate.string(from: date) }
 
     // MARK: Responses
 
@@ -223,11 +231,9 @@ public enum GoogleCalendarAPI {
 
         static func parse(_ t: Time, calendar: Calendar) -> (Date, Bool)? {
             if let dt = t.dateTime {
-                let f = ISO8601DateFormatter()
-                f.formatOptions = [.withInternetDateTime]
-                if let d = f.date(from: dt) { return (d, false) }
-                f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                return f.date(from: dt).map { ($0, false) }
+                guard let d = GoogleCalendarAPI.internetDate.date(from: dt)
+                        ?? GoogleCalendarAPI.internetDateFractional.date(from: dt) else { return nil }
+                return (d, false)
             }
             if let day = t.date {
                 // all-day dates are calendar days, not instants: midnight in the user's time zone

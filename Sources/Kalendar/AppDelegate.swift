@@ -84,7 +84,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func sync(ifOlderThan seconds: TimeInterval = 0) {
-        if seconds > 0, let last = engine.lastSync, Date().timeIntervalSince(last) < seconds { return }
+        if seconds > 0 {
+            // a periodic or on-open sync is redundant while one runs; syncAll would queue another pass
+            if engine.state == .syncing { return }
+            if let last = engine.lastSync, Date().timeIntervalSince(last) < seconds { return }
+        }
         Task { await engine.syncAll() }
     }
 

@@ -75,14 +75,22 @@ final class AgendaModel {
         select(today)
     }
 
-    /// Selects a day, shows its month, and scrolls the list to it, growing the list if needed.
+    /// Selects a day, shows its month, and scrolls the list to it. A day near the list's range
+    /// grows the range; a distant one (Go to Date two years out) starts a new range at that day,
+    /// so the list never spans years of empty sections.
     func select(_ day: Date) {
         let day = calendar.startOfDay(for: day)
         selectedDay = day
         displayedMonth = calendar.dateInterval(of: .month, for: day)!.start
-        if day < listStart { listStart = day }
         let needed = calendar.date(byAdding: .day, value: 31, to: day)!
-        if needed > listEnd { listEnd = needed }
+        let reach = TimeInterval(Self.initialListDays * 86400)
+        if day < listStart.addingTimeInterval(-reach) || day > listEnd.addingTimeInterval(reach) {
+            listStart = day
+            listEnd = calendar.date(byAdding: .day, value: Self.initialListDays, to: day)!
+        } else {
+            if day < listStart { listStart = day }
+            if needed > listEnd { listEnd = needed }
+        }
         reload()
         scrollTarget = day
         scrollRequest += 1

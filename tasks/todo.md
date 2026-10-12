@@ -1,28 +1,20 @@
-# Milestone 5 — Google Tasks and alerts
+# Milestone 6 — Polish
 
-Spec: `docs/SPEC.md` §5.1 (task form), §7.3, §10, §18.2 (Tasks), §19. Earlier milestones are in git history.
+Spec: `docs/SPEC.md` §3, §11, §12, §14, §17 item 6. Earlier milestones are in git history.
 
-## Tasks
-- [x] Cache v5: task lists and tasks; per-list sync time
-- [x] Tasks API: tasklists.list, tasks.list (`updatedMin`, `showCompleted`, `showHidden`, `showDeleted`), insert, patch, delete, move; synced with the calendars
-- [x] Task writes through the existing write queue (optimistic, offline, rejected → refetch)
-- [x] Agenda: tasks on their due day with the all-day items (circle checkbox), overdue incomplete tasks in today with the due date in `wait`, ✓ under grid days with tasks
-- [x] Tasks view (⌘R, ≡ › Tasks): all lists merged, Due Date / My Order, subtasks indented, complete / uncomplete, completed shown
-- [x] Task form: event/task toggle, `todo`/`task`/`reminder`/`√` prefix, due (date only, "Google Tasks stores dates only" when a time was typed), list picker, notes, Add Task
-- [x] Task context menu (§7.3): Complete/Uncomplete, Move to List ›, Duplicate as Event, Delete; event menu's Duplicate as Task
-- [x] Tests
-
-## Alerts (§19)
-- [x] `AlertScheduler`: effective popup reminders for cached events in the next 24 h (calendar defaults when `useDefault`), not declined, ≤ 64 pending, identifier `<calendarId>|<eventId>|<minutes>`; reschedule after sync, at midnight, on wake
-- [x] Content: title, "3:00 – 3:50 PM · Location"; actions Join (with a video link) and Snooze 5 Minutes; click opens the event's detail popover
-- [x] Permission after sign-in; Settings › General "Show alerts" removes pending alerts; "Alerts are off in System Settings" with a button
-- [x] On wake: delivered alerts for ended events removed
-- [x] Tests for alert selection and identifiers
-- [x] Verify: build, tests, app checks
+- [x] `Preferences`: one observable store for every setting, backed by UserDefaults (§12 defaults from §2)
+- [x] General: shortcut recorder (re-registers the Carbon hotkey), default calendar, default task list, default event duration, start week on, day starts (new timed slots), play UI sound, go to today after adding, show alerts, updates
+- [x] Appearance: menu bar icon (icon only / date / next event title / next event + countdown), color icon, text size (small / normal / large), theme (system / light / dark)
+- [x] Events & Tasks: list shows (7 / 14 / 30 / all days), show when events end, show declined events (list only; the grid never dots them), combine identical events, dim past items, show tasks in list, show completed tasks, sort tasks by
+- [x] Calendars: calendar checklist by account (Google `selected`), task-list checklist by account (local)
+- [x] Shortcuts (§11) not yet handled: ⌘N, ⌘E / ⌘I, ↑ / ↓ selection, Enter opens the selection, ⌘↓ from search to the first result
+- [x] Accessibility: labels on every icon-only control, task rows, VoiceOver on the grid (selected state, tasks due)
+- [x] Offscreen snapshot mode (`-renderSnapshots <dir>`) to check light/dark and text sizes without taking focus
+- [x] Tests for settings-driven logic in Core; build, tests, snapshots
 
 ## Review
-- Tasks: cache v5, sync per list with `updatedMin` (a Tasks API failure is logged and does not fail calendar sync), writes through the event queue (absolute Tasks URLs; `local-` placeholders retargeted when the insert lands). Live: 4 lists, 277 tasks.
-- Agenda task rows, overdue in today in `wait`, ✓ under grid days; Tasks view (⌘R / ⌘3) with Due Date / My Order, Show Completed, subtasks indented; task detail popover saves on close; task form with ▣ | ✓ and "Google Tasks stores dates only".
-- Alerts: `AlertPlanner` (core, tested) + `AlertScheduler`. Live: permission authorized, 5 alerts planned and 5 pending.
-- Tests: 86 passing.
-- Not checked by hand (UI driving would take focus): the task rows, Tasks view, task form, notification actions.
+- `Preferences` holds every §12 setting; changes reload the agenda, redraw the menu bar item, reschedule alerts and re-register the hotkey.
+- Fonts go through `Font.ui`, scaled by Text size; the Mini Window grows with it.
+- Snapshots (`.build/shots/m6`): popover light/dark × small/normal/large, all five Settings tabs, menu bar glyphs. Rendered in an off-screen non-activating panel.
+- Declined events: no grid dot ever (user request); in the list only with Show declined events, drawn ⊘.
+- No new Core logic, so no new unit tests; 91 pass.

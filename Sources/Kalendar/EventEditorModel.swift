@@ -119,9 +119,10 @@ final class EventEditorModel {
             draft.start = cal.startOfDay(for: draft.start)
             draft.end = max(cal.startOfDay(for: draft.end), cal.date(byAdding: .day, value: 1, to: draft.start)!)
         } else {
-            // a fresh timed slot: 9 AM for an hour, the default duration (§2)
-            draft.start = cal.date(bySettingHour: 9, minute: 0, second: 0, of: draft.start)!
-            draft.end = draft.start.addingTimeInterval(3600)
+            // a fresh timed slot: when the day starts, for the default duration (§12)
+            let prefs = Preferences.shared
+            draft.start = cal.date(bySettingHour: prefs.dayStartHour, minute: 0, second: 0, of: draft.start)!
+            draft.end = draft.start.addingTimeInterval(TimeInterval(prefs.defaultDuration * 60))
         }
     }
 

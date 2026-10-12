@@ -49,7 +49,7 @@ struct EventEditor: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(Theme.background)
         .tint(Theme.accent)
-        .font(.system(size: 13))
+        .font(.ui(13))
     }
 
     // MARK: Sections
@@ -59,7 +59,7 @@ struct EventEditor: View {
             HStack(alignment: .top) {
                 TextField("Title", text: $model.draft.summary, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ui(16, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .disabled(readOnly)
                 if let onKind { KindToggle(isTask: false, set: onKind) }
@@ -102,7 +102,7 @@ struct EventEditor: View {
                 Row("repeat") { RepeatMenu(model: model) }
                 if let rule = d.recurrence {
                     if rule.preset(start: d.start) == nil {
-                        Text(rule.summary(start: d.start)).font(.system(size: 11)).foregroundStyle(Theme.muted)
+                        Text(rule.summary(start: d.start)).font(.ui(11)).foregroundStyle(Theme.muted)
                             .padding(.leading, labelWidth + 8)
                     }
                     Row("repeat end") { RepeatEndMenu(model: model) }
@@ -142,13 +142,13 @@ struct EventEditor: View {
                     Spacer()
                     if !readOnly && !a.isSelf {
                         Button { model.draft.attendees.removeAll { $0.email == a.email } } label: {
-                            Image(systemName: "xmark").font(.system(size: 9))
+                            Image(systemName: "xmark").font(.ui(9))
                         }
                         .buttonStyle(.plain).foregroundStyle(Theme.muted)
                         .accessibilityLabel("Remove \(a.email)")
                     }
                 }
-                .font(.system(size: 12))
+                .font(.ui(12))
             }
             if !readOnly { AddInvitee(model: model) }
         }
@@ -158,14 +158,14 @@ struct EventEditor: View {
         Theme.line.frame(height: 1)
         if readOnly {
             Text(Self.plainText(model.draft.notes))
-                .font(.system(size: 12))
+                .font(.ui(12))
                 .foregroundStyle(Theme.text)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
             TextField("Add Notes", text: $model.draft.notes, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.ui(12))
                 .foregroundStyle(Theme.text)
                 .lineLimit(3...12)
         }
@@ -217,11 +217,23 @@ struct AttendeeStatus: View {
     let response: String
 
     var body: some View {
+        Group {
+            switch response {
+            case "accepted": Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
+            case "declined": Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.bad)
+            case "tentative": Image(systemName: "questionmark.circle.fill").foregroundStyle(Theme.wait)
+            default: Image(systemName: "questionmark.circle").foregroundStyle(Theme.muted)
+            }
+        }
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
         switch response {
-        case "accepted": Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
-        case "declined": Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.bad)
-        case "tentative": Image(systemName: "questionmark.circle.fill").foregroundStyle(Theme.wait)
-        default: Image(systemName: "questionmark.circle").foregroundStyle(Theme.muted)
+        case "accepted": "Accepted"
+        case "declined": "Declined"
+        case "tentative": "Maybe"
+        default: "No reply"
         }
     }
 }
@@ -457,7 +469,7 @@ private struct AddInvitee: View {
     var body: some View {
         TextField("Add Invitees", text: $text)
             .textFieldStyle(.plain)
-            .font(.system(size: 12))
+            .font(.ui(12))
             .foregroundStyle(Theme.text)
             .onSubmit {
                 let email = text.trimmingCharacters(in: .whitespaces)
@@ -497,7 +509,7 @@ struct WriteError: View {
     var body: some View {
         if let error = writer.error {
             Text(error)
-                .font(.system(size: 12))
+                .font(.ui(12))
                 .foregroundStyle(Theme.bad)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(padding)

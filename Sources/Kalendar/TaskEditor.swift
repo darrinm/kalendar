@@ -80,7 +80,7 @@ struct TaskEditor: View {
             HStack(alignment: .top) {
                 TextField("Title", text: $model.draft.title, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.ui(16, weight: .semibold))
                     .foregroundStyle(Theme.text)
                 if let onKind { KindToggle(isTask: true, set: onKind) }
             }
@@ -97,7 +97,7 @@ struct TaskEditor: View {
             }
             if model.timeIgnored {
                 Text("Google Tasks stores dates only")
-                    .font(.system(size: 11))
+                    .font(.ui(11))
                     .foregroundStyle(Theme.muted)
                     .padding(.leading, labelWidth + 8)
             }
@@ -123,7 +123,7 @@ struct TaskEditor: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(Theme.background)
         .tint(Theme.accent)
-        .font(.system(size: 13))
+        .font(.ui(13))
     }
 }
 
@@ -190,7 +190,7 @@ struct TaskRow: View {
         HStack(alignment: .top, spacing: 8) {
             Button { actions.writer.setCompleted(task, !task.completed) } label: {
                 Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 13))
+                    .font(.ui(13))
                     .foregroundStyle(task.completed ? Theme.accent : Theme.muted)
             }
             .buttonStyle(.plain)
@@ -198,11 +198,11 @@ struct TaskRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 if let due = task.due, showsDue || overdue {
                     Text(due.formatted(.dateTime.month(.abbreviated).day()))
-                        .font(.system(size: 11))
+                        .font(.ui(11))
                         .foregroundStyle(overdue ? Theme.wait : Theme.muted)
                 }
                 Text(task.title.isEmpty ? "(No title)" : task.title)
-                    .font(.system(size: 13))
+                    .font(.ui(13))
                     .foregroundStyle(task.completed ? Theme.muted : Theme.text)
                     .strikethrough(task.completed)
                     .lineLimit(2)
@@ -219,6 +219,23 @@ struct TaskRow: View {
         .background(AnchorView(view: $anchor))
         .onTapGesture { actions.openTask(task, anchor: anchor) }
         .contextMenu { TaskContextMenu(task: task, actions: actions) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityText(overdue: overdue))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: task.completed ? "Uncomplete" : "Complete") {
+            actions.writer.setCompleted(task, !task.completed)
+        }
+    }
+}
+
+extension TaskRow {
+    /// "Task, pay office rent, overdue, due Oct 1" for VoiceOver.
+    func accessibilityText(overdue: Bool) -> String {
+        var parts = ["Task", task.title.isEmpty ? "No title" : task.title]
+        if task.completed { parts.append("completed") }
+        if overdue { parts.append("overdue") }
+        if let due = task.due { parts.append("due \(due.formatted(date: .abbreviated, time: .omitted))") }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -249,7 +266,7 @@ struct TasksView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("All Tasks")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.ui(22, weight: .semibold))
                     .foregroundStyle(Theme.text)
                 Spacer()
                 Menu {
@@ -273,17 +290,23 @@ struct TasksView: View {
             Theme.line.frame(height: 1)
             if agenda.taskRows.isEmpty {
                 Text(agenda.taskLists.isEmpty ? "No task lists" : "No tasks")
-                    .font(.system(size: 12))
+                    .font(.ui(12))
                     .foregroundStyle(Theme.muted)
                     .padding(16)
             }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(agenda.taskRows, id: \.task.key) { row in
-                        TaskRow(task: row.task, actions: model, showsDue: true, depth: row.depth)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(agenda.taskRows, id: \.task.key) { row in
+                            TaskRow(task: row.task, actions: model, showsDue: true, depth: row.depth)
+                        }
                     }
+                    .padding(.vertical, 6)
                 }
-                .padding(.vertical, 6)
+                // keyboard selection (§11) keeps the selected row on screen
+                .onChange(of: agenda.selectedEvent) {
+                    if let key = agenda.selectedEvent { proxy.scrollTo(key) }
+                }
             }
         }
     }

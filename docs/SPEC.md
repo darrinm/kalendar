@@ -419,7 +419,7 @@ Tasks are Google Tasks. Completing writes `status: "completed"`; uncompleting wr
 
 Tabs: **General**, **Accounts**, **Appearance**, **Events & Tasks**, **Calendars**.
 
-- General: Launch at login; Global shortcut recorder; Default calendar; Default task list; Default event duration (15/30/45/60/90/120 min); Start week on; Day starts/ends; Play UI sound; Go to today after adding items; Show alerts (on); Check for updates automatically (on, §20).
+- General: Launch at login; Global shortcut recorder; Default calendar; Default task list; Default event duration (15/30/45/60/90/120 min); Start week on; Day starts at (**[decision]** the hour a new timed slot starts; "Day ends" is omitted because only the out-of-scope Day and Week views use it); Play UI sound; Go to today after adding items; Show alerts (on); Check for updates automatically (on, §20).
 - Accounts: one row per signed‑in Google account (email, "Sign Out"), and an "Add Account…" button (§8.5).
 - Appearance: Menu bar icon shows (Icon only / Date / Next event title / Next event + countdown); Use color icon; Text size (Small/Normal/Large); Theme (System/Light/Dark). All four icon options are in v1.
 - Events & Tasks: List shows (Next 7 days / 14 / 30 / All days); Show when events end; Show declined events; Combine identical events; Dim items on previous days; Show tasks in list; Show completed tasks; Sort tasks by (Due Date / My Order).

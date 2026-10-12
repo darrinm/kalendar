@@ -70,6 +70,7 @@ final class NewItemModel {
            let match = writable.first(where: { $0.summary.lowercased().hasPrefix(q) }) {
             return match
         }
+        if let key = Preferences.shared.defaultCalendar, let c = writable.first(where: { $0.key == key }) { return c }
         return agenda.defaultCalendar(account: accounts.accounts.first?.email)
     }
 
@@ -79,7 +80,7 @@ final class NewItemModel {
             reset()
             return
         }
-        let parser = NLParser(defaultDay: defaultDay) { [weak self] in self?.contacts.uniqueEmail(named: $0) }
+        let parser = NLParser(calendar: Preferences.shared.calendar, defaultDuration: TimeInterval(Preferences.shared.defaultDuration * 60), defaultDay: defaultDay) { [weak self] in self?.contacts.uniqueEmail(named: $0) }
         let parsed = parser.parse(input)
         // without a task list there is nowhere to add a task, so the input stays an event
         if chosenKind ?? parsed.isTask, !agenda.taskLists.isEmpty {
@@ -122,6 +123,7 @@ final class NewItemModel {
         let lists = agenda.taskLists
         let q = parsed.calendarQuery?.lowercased() ?? ""
         guard let list = (q.isEmpty ? nil : lists.first { $0.title.lowercased().hasPrefix(q) })
+                ?? Preferences.shared.defaultTaskList.flatMap(agenda.taskList(forKey:))
                 ?? agenda.defaultTaskList(account: accounts.accounts.first?.email) else { return }
         let task = TaskItem(account: list.account, listId: list.id, id: "", title: parsed.title,
                             due: parsed.hasDate || defaultDay != nil ? Calendar.current.startOfDay(for: parsed.start) : nil)
@@ -216,7 +218,7 @@ final class NewItemModel {
         } else {
             return false
         }
-        if UserDefaults.standard.object(forKey: "playSounds") as? Bool ?? true { NSSound(named: "Pop")?.play() }
+        if Preferences.shared.playSounds { NSSound(named: "Pop")?.play() }
         reset()
         defaultDay = nil
         return true

@@ -55,17 +55,14 @@ final class AgendaModel {
     private(set) var taskLists: [TaskList] = []
     /// The Tasks view (§10) replaces the grid and the agenda.
     var showsTasks = false { didSet { if showsTasks && !oldValue { reloadTasks() } } }
-    var taskSort = TaskSort(rawValue: UserDefaults.standard.string(forKey: "taskSort") ?? "") ?? .dueDate {
-        didSet {
-            UserDefaults.standard.set(taskSort.rawValue, forKey: "taskSort")
-            reloadTasks()
-        }
+    /// Kept in Preferences; a change reloads through `settingsChanged`.
+    var taskSort: TaskSort {
+        get { prefs.taskSort }
+        set { prefs.taskSort = newValue }
     }
-    var showCompletedTasks = UserDefaults.standard.bool(forKey: "showCompletedTasks") {
-        didSet {
-            UserDefaults.standard.set(showCompletedTasks, forKey: "showCompletedTasks")
-            reloadTasks()
-        }
+    var showCompletedTasks: Bool {
+        get { prefs.showCompletedTasks }
+        set { prefs.showCompletedTasks = newValue }
     }
     /// The Tasks view's rows, in order; `depth` 1 for a subtask.
     private(set) var taskRows: [(task: TaskItem, depth: Int)] = []
@@ -83,16 +80,21 @@ final class AgendaModel {
     @ObservationIgnored private var calendarsByKey: [String: CalendarInfo] = [:]
     @ObservationIgnored private var eventColors: [String: [String: String]] = [:]
     @ObservationIgnored private var searchTask: Task<Void, Never>?
-    private var calendar: Calendar { .current }
+    /// The user's calendar with the Start week on setting (§12).
+    var calendar: Calendar { prefs.calendar }
+    private var prefs: Preferences { .shared }
 
+    /// "All days": the first stretch loaded, extended on scroll (§4.3).
     static let initialListDays = 60
+    /// Whether the list grows as it scrolls ("List shows: All days").
+    var listIsEndless: Bool { prefs.listDays == 0 }
 
     init(cache: CalendarCache, engine: SyncEngine) {
         self.cache = cache
         self.engine = engine
-        let today = Calendar.current.startOfDay(for: Date())
+        let today = Preferences.shared.calendar.startOfDay(for: Date())
         self.today = today
-        displayedMonth = Calendar.current.dateInterval(of: .month, for: today)!.start
+        displayedMonth = Preferences.shared.calendar.dateInterval(of: .month, for: today)!.start
         selectedDay = today
         listStart = today
         listEnd = today
@@ -122,7 +124,7 @@ final class AgendaModel {
         selectedDay = day
         displayedMonth = calendar.dateInterval(of: .month, for: day)!.start
         let reach = TimeInterval(Self.initialListDays * 86400)
-        if day < listStart.addingTimeInterval(-reach) || day > listEnd.addingTimeInterval(reach) {
+        if !listIsEndless || day < listStart.addingTimeInterval(-reach) || day > listEnd.addingTimeInterval(reach) {
             startList(at: day)
         } else {
             listStart = min(listStart, day)
@@ -146,7 +148,7 @@ final class AgendaModel {
 
     private func startList(at day: Date) {
         listStart = day
-        listEnd = calendar.date(byAdding: .day, value: Self.initialListDays, to: day)!
+        listEnd = calendar.date(byAdding: .day, value: listIsEndless ? Self.initialListDays : prefs.listDays, to: day)!
     }
 
     // MARK: Reading the cache
@@ -184,7 +186,7 @@ final class AgendaModel {
         guard let events = try? cache.events(from: from, to: to) else { return }
         let byDay = bucket(events, from: from, to: to)
         // overdue incomplete tasks show under today, not on their past due day (§4.3)
-        let tasks = (try? cache.tasks(dueFrom: from, to: to, overdueBefore: today)) ?? []
+        let tasks = prefs.showTasksInList ? visible((try? cache.tasks(dueFrom: from, to: to, overdueBefore: today)) ?? []) : []
         let tasksByDay = Dictionary(grouping: tasks) { t in
             !t.completed && t.due! < today ? today : t.due!
         }
@@ -200,9 +202,20 @@ final class AgendaModel {
         }
     }
 
+    /// Tasks on lists the Calendars settings show, completed ones only when shown (§12).
+    private func visible(_ tasks: [TaskItem]) -> [TaskItem] {
+        tasks.filter { !prefs.hiddenTaskLists.contains($0.listKey) && (showCompletedTasks || !$0.completed) }
+    }
+
+    /// Settings that change what the grid or the list shows.
+    func settingsChanged() {
+        startList(at: selectedDay)
+        cacheChanged()
+    }
+
     /// The Tasks view's rows (§10): every list merged, subtasks under their parent.
     private func reloadTasks() {
-        let all = ((try? cache.allTasks()) ?? []).filter { showCompletedTasks || !$0.completed }
+        let all = visible((try? cache.allTasks()) ?? [])
         let keys = Set(all.map(\.key))
         // by the parent's key; a subtask whose parent is hidden (completed, say) is a top-level task, under nil
         let byParent = Dictionary(grouping: all) { (t: TaskItem) -> String? in
@@ -239,8 +252,11 @@ final class AgendaModel {
 
     private func section(for day: Date, events: [EventInstance]) -> DaySection {
         // "Show declined events" is off (§2); identical events on several calendars show once (§4.3)
+        // identical events on several calendars show once (§4.3) unless that's turned off
         var seen = Set<EventInstance.DuplicateKey>()
-        let shown = events.filter { !$0.isDeclined && seen.insert($0.duplicateKey).inserted }
+        let shown = events.filter { e in
+            (prefs.showDeclined || !e.isDeclined) && (!prefs.combineIdentical || seen.insert(e.duplicateKey).inserted)
+        }
         return DaySection(day: day, allDay: shown.filter(\.allDay), timed: shown.filter { !$0.allDay })
     }
 

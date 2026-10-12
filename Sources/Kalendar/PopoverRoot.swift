@@ -46,7 +46,7 @@ struct PopoverRoot: View {
                         SyncNotice(engine: agenda.engine)
                         WriteErrorNotice(writer: model.writer)
                         Theme.line.frame(height: 1)
-                        AgendaList(model: agenda, sections: agenda.sections, extendsAtEnd: true, actions: model)
+                        AgendaList(model: agenda, sections: agenda.sections, extendsAtEnd: agenda.listIsEndless, actions: model)
                     }
                 }
                 if model.showsSuggestions {
@@ -88,10 +88,11 @@ struct PopoverRoot: View {
                 .fixedSize()
                 .foregroundStyle(Theme.accent)
                 .help("Search in \(agenda.scope.rawValue)")
+                .accessibilityLabel("Search in \(agenda.scope.rawValue)")
             }
             TextField(searching ? "Search" : "", text: text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 17))
+                .font(.ui(17))
                 .foregroundStyle(Theme.text)
                 .focused($inputFocused)
                 .onExitCommand { model.escape() }
@@ -112,7 +113,7 @@ struct PopoverRoot: View {
                     .accessibilityLabel("Search")
             }
         }
-        .font(.system(size: 15))
+        .font(.ui(15))
     }
 }
 
@@ -133,7 +134,7 @@ private struct MonthHeader: View {
             if !agenda.invitations.isEmpty {
                 Button { if let badgeAnchor { model.showNotifications(anchor: badgeAnchor) } } label: {
                     Text("\(agenda.invitations.count)")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.ui(13, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(minWidth: 22, minHeight: 22)
                         .background(Theme.bad, in: Circle())
@@ -148,7 +149,7 @@ private struct MonthHeader: View {
             Button { agenda.moveMonth(by: 1) } label: { Image(systemName: "chevron.right") }
                 .accessibilityLabel("Next month")
         }
-        .font(.system(size: 26, weight: .semibold))
+        .font(.ui(26, weight: .semibold))
         .buttonStyle(MonthArrowStyle())
     }
 }
@@ -156,7 +157,7 @@ private struct MonthHeader: View {
 private struct MonthArrowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .font(.ui(15, weight: .semibold))
             .foregroundStyle(Theme.muted.opacity(configuration.isPressed ? 0.5 : 1))
             .frame(width: 26, height: 26)
             .contentShape(Rectangle())
@@ -188,7 +189,7 @@ private struct NoticeRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(text)
-                .font(.system(size: 13))
+                .font(.ui(13))
                 .foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
             Button(button, action: action)
@@ -206,7 +207,7 @@ private struct SyncNotice: View {
     var body: some View {
         if case .failed = engine.state {
             Text("Couldn't reach Google. Showing saved events.")
-                .font(.system(size: 11))
+                .font(.ui(11))
                 .foregroundStyle(Theme.muted)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 4)
@@ -222,11 +223,11 @@ private struct WriteErrorNotice: View {
         if let error = writer.error {
             HStack(alignment: .top, spacing: 6) {
                 Text(error)
-                    .font(.system(size: 11))
+                    .font(.ui(11))
                     .foregroundStyle(Theme.bad)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                Button { writer.clearError() } label: { Image(systemName: "xmark").font(.system(size: 9)) }
+                Button { writer.clearError() } label: { Image(systemName: "xmark").font(.ui(9)) }
                     .buttonStyle(.plain).foregroundStyle(Theme.muted)
                     .accessibilityLabel("Dismiss")
             }
@@ -293,7 +294,7 @@ private struct ToolbarIcon: View {
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: 15))
+            .font(.ui(15))
             .foregroundStyle(Theme.muted)
             .frame(width: 30, height: 26)
             .contentShape(Rectangle())
@@ -319,12 +320,12 @@ private struct CalendarsMenu: View {
         } label: {
             HStack(spacing: 4) {
                 Text("Calendars")
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                Image(systemName: "chevron.down").font(.ui(9, weight: .semibold))
                     .foregroundStyle(Theme.muted)
                     .accessibilityHidden(true)
             }
             .accessibilityElement(children: .combine)
-            .font(.system(size: 13, weight: .medium))
+            .font(.ui(13, weight: .medium))
             .foregroundStyle(Theme.text)
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
@@ -344,7 +345,7 @@ private struct SuggestionList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.ui(11, weight: .semibold))
                 .foregroundStyle(Theme.muted)
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
@@ -384,25 +385,25 @@ private struct SuggestionList: View {
                 Text(c.summary).foregroundStyle(Theme.text)
                 Text(c.account).foregroundStyle(Theme.muted).lineLimit(1)
             }
-            .font(.system(size: 13))
+            .font(.ui(13))
         case .contact(let c):
             HStack(spacing: 8) {
                 Text(String((c.name ?? c.email).prefix(1)).uppercased())
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.ui(11, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .frame(width: 24, height: 24)
                     .background(Theme.line, in: Circle())
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(c.name ?? c.email).font(.system(size: 13)).foregroundStyle(Theme.text)
-                    if c.name != nil { Text(c.email).font(.system(size: 11)).foregroundStyle(Theme.muted) }
+                    Text(c.name ?? c.email).font(.ui(13)).foregroundStyle(Theme.text)
+                    if c.name != nil { Text(c.email).font(.ui(11)).foregroundStyle(Theme.muted) }
                 }
             }
         case .place(let title, let subtitle):
             HStack(spacing: 8) {
-                Image(systemName: "mappin.circle.fill").foregroundStyle(Theme.bad)
+                Image(systemName: "mappin.circle.fill").foregroundStyle(Theme.bad).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(title).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
-                    if !subtitle.isEmpty { Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1) }
+                    Text(title).font(.ui(13)).foregroundStyle(Theme.text).lineLimit(1)
+                    if !subtitle.isEmpty { Text(subtitle).font(.ui(11)).foregroundStyle(Theme.muted).lineLimit(1) }
                 }
             }
         }

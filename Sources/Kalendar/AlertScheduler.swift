@@ -24,7 +24,7 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
     private static let joinAction = "join"
     private static let snoozeAction = "snooze"
 
-    static var enabled: Bool { UserDefaults.standard.object(forKey: "showAlerts") as? Bool ?? true }
+    static var enabled: Bool { Preferences.shared.showAlerts }
 
     init(cache: CalendarCache) {
         self.cache = cache

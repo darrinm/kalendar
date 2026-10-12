@@ -1,4 +1,4 @@
-// Settings (§12). General and Accounts work; the other tabs exist so the window has its final shape.
+// Settings (§12): General, Accounts, Appearance, Events & Tasks, Calendars, all kept in Preferences.
 import AppKit
 import KalendarCore
 import SwiftUI
@@ -43,40 +43,70 @@ struct SettingsView: View {
     let engine: SyncEngine
     let alerts: AlertScheduler
     let signIn: (String?) -> Void
+    @State var tab = 0
 
     var body: some View {
-        TabView {
-            GeneralSettings(alerts: alerts)
-                .tabItem { Label("General", systemImage: "gearshape") }
+        TabView(selection: $tab) {
+            GeneralSettings(alerts: alerts, cache: cache, engine: engine)
+                .tabItem { Label("General", systemImage: "gearshape") }.tag(0)
             AccountsSettings(accounts: accounts, cache: cache, engine: engine, signIn: signIn)
-                .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
-            NotYet()
-                .tabItem { Label("Appearance", systemImage: "paintbrush") }
-            NotYet()
-                .tabItem { Label("Events & Tasks", systemImage: "list.bullet") }
-            NotYet()
-                .tabItem { Label("Calendars", systemImage: "calendar") }
+                .tabItem { Label("Accounts", systemImage: "person.crop.circle") }.tag(1)
+            AppearanceSettings()
+                .tabItem { Label("Appearance", systemImage: "paintbrush") }.tag(2)
+            EventsAndTasksSettings()
+                .tabItem { Label("Events & Tasks", systemImage: "list.bullet") }.tag(3)
+            CalendarsSettings(cache: cache, engine: engine)
+                .tabItem { Label("Calendars", systemImage: "calendar") }.tag(4)
         }
-        .frame(width: 480, height: 320)
+        .frame(width: 520, height: 460)
         .tint(Theme.accent)
     }
 }
 
 private struct GeneralSettings: View {
     let alerts: AlertScheduler
+    let cache: CalendarCache
+    let engine: SyncEngine
+    @Bindable private var prefs = Preferences.shared
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var automaticUpdates = UpdaterController.shared.automaticallyChecks
-    @AppStorage("showAlerts") private var showAlerts = true
 
     var body: some View {
+        // re-read when a sync finishes, so new calendars and lists appear
+        let _ = engine.lastSync
+        let calendars = ((try? cache.calendars()) ?? []).filter(\.isWritable)
+        let lists = (try? cache.taskLists()) ?? []
         Form {
             // reads back the actual state, which can differ from the request (approval pending)
             Toggle("Launch at login", isOn: Binding(
                 get: { launchAtLogin },
                 set: { LaunchAtLogin.set($0); launchAtLogin = LaunchAtLogin.isEnabled }))
-            Toggle("Show alerts", isOn: $showAlerts)
-                .onChange(of: showAlerts) { alerts.setNeedsReschedule() }
-            if showAlerts && !alerts.allowedBySystem {
+            LabeledContent("Global shortcut") { ShortcutRecorder(prefs: prefs) }
+            Picker("Default calendar", selection: $prefs.defaultCalendar) {
+                Text("Primary calendar").tag(String?.none)
+                ForEach(calendars, id: \.key) { Text("\($0.summary) (\($0.account))").tag(Optional($0.key)) }
+            }
+            Picker("Default task list", selection: $prefs.defaultTaskList) {
+                Text("First list").tag(String?.none)
+                ForEach(lists, id: \.key) { Text("\($0.title) (\($0.account))").tag(Optional($0.key)) }
+            }
+            Picker("Default event duration", selection: $prefs.defaultDuration) {
+                ForEach([15, 30, 45, 60, 90, 120], id: \.self) { Text($0 < 60 || $0 % 60 != 0 ? "\($0) minutes" : "\($0 / 60) hour\($0 == 60 ? "" : "s")").tag($0) }
+            }
+            Picker("Start week on", selection: $prefs.firstWeekday) {
+                Text("System setting").tag(0)
+                ForEach(1...7, id: \.self) { Text(Calendar.current.weekdaySymbols[$0 - 1]).tag($0) }
+            }
+            Picker("Day starts at", selection: $prefs.dayStartHour) {
+                ForEach(0..<24, id: \.self) { hour in
+                    Text(Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date())!
+                        .formatted(date: .omitted, time: .shortened)).tag(hour)
+                }
+            }
+            Toggle("Play UI sounds", isOn: $prefs.playSounds)
+            Toggle("Go to today after adding items", isOn: $prefs.goToTodayAfterAdding)
+            Toggle("Show alerts", isOn: $prefs.showAlerts)
+            if prefs.showAlerts && !alerts.allowedBySystem {
                 HStack {
                     Text("Alerts are off in System Settings")
                         .foregroundStyle(.secondary)
@@ -97,6 +127,99 @@ private struct GeneralSettings: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await alerts.refreshPermission() }
         }
+    }
+}
+
+private struct AppearanceSettings: View {
+    @Bindable private var prefs = Preferences.shared
+
+    var body: some View {
+        Form {
+            Picker("Menu bar icon shows", selection: $prefs.iconStyle) {
+                ForEach(Preferences.IconStyle.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            Toggle("Use color icon", isOn: $prefs.colorIcon)
+            Picker("Text size", selection: $prefs.textSize) {
+                ForEach(Preferences.TextSize.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            Picker("Theme", selection: $prefs.appearance) {
+                ForEach(Preferences.Appearance.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct EventsAndTasksSettings: View {
+    @Bindable private var prefs = Preferences.shared
+
+    var body: some View {
+        Form {
+            Picker("List shows", selection: $prefs.listDays) {
+                Text("Next 7 days").tag(7)
+                Text("Next 14 days").tag(14)
+                Text("Next 30 days").tag(30)
+                Text("All days").tag(0)
+            }
+            Toggle("Show when events end", isOn: $prefs.showEventEnds)
+            Toggle("Show declined events", isOn: $prefs.showDeclined)
+            Toggle("Combine identical events", isOn: $prefs.combineIdentical)
+            Toggle("Dim items on previous days", isOn: $prefs.dimPast)
+            Toggle("Show tasks in list", isOn: $prefs.showTasksInList)
+            Toggle("Show completed tasks", isOn: $prefs.showCompletedTasks)
+            Picker("Sort tasks by", selection: $prefs.taskSort) {
+                ForEach(TaskSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// The task-list sections' identity, distinct from the calendar sections', which are also per account.
+private struct ListsSection: Identifiable {
+    let account: String
+    var id: String { "tasks|\(account)" }
+}
+
+/// Calendar visibility writes Google's `selected` flag; task-list visibility is local (§12).
+private struct CalendarsSettings: View {
+    let cache: CalendarCache
+    let engine: SyncEngine
+    @Bindable private var prefs = Preferences.shared
+
+    var body: some View {
+        let _ = engine.lastSync
+        let calendars = Dictionary(grouping: (try? cache.calendars()) ?? [], by: \.account)
+        let lists = Dictionary(grouping: (try? cache.taskLists()) ?? [], by: \.account)
+        Form {
+            ForEach(calendars.keys.sorted(), id: \.self) { account in
+                Section("Calendars: \(account)") {
+                    ForEach(calendars[account]!, id: \.key) { calendar in
+                        Toggle(isOn: Binding(get: { calendar.selected }, set: { selected in
+                            Task { try? await engine.setSelected(selected, calendar: calendar) }
+                        })) {
+                            HStack {
+                                Circle().fill(Color(hex: calendar.backgroundColor)).frame(width: 8, height: 8)
+                                Text(calendar.summary)
+                            }
+                        }
+                    }
+                }
+            }
+            ForEach(lists.keys.sorted().map { ListsSection(account: $0) }) { section in
+                let account = section.account
+                Section("Task lists: \(account)") {
+                    ForEach(lists[account]!, id: \.key) { list in
+                        Toggle(list.title, isOn: Binding(
+                            get: { !prefs.hiddenTaskLists.contains(list.key) },
+                            set: { if $0 { prefs.hiddenTaskLists.remove(list.key) } else { prefs.hiddenTaskLists.insert(list.key) } }))
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
@@ -150,13 +273,5 @@ private struct AccountSettingsRow: View {
             }
             Button("Sign Out") { Task { await accounts.signOut(account.email) } }
         }
-    }
-}
-
-private struct NotYet: View {
-    var body: some View {
-        Text("Not available yet.")
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

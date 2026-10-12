@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.onChange = { [weak self] in
             agenda.cacheChanged()
             self?.alerts.setNeedsReschedule()
+            self?.statusItem?.redraw()
         }
         let model = PopoverModel(accounts: accounts, agenda: agenda, writer: writer, signIn: signIn,
                                  showSettings: { [weak self] in self?.showSettings() },
@@ -50,13 +51,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onToggle: { [weak self] in self?.togglePopover() },
             menu: makeStatusMenu())
         HotkeyCenter.shared.handler = { [weak self] in self?.togglePopover() }
-        HotkeyCenter.shared.install()
+        let prefs = Preferences.shared
+        HotkeyCenter.shared.register(prefs.hotkey)
+        prefs.applyAppearance()
+        statusItem.nextEvent = { [weak self] in self?.nextEventToday() }
+        statusItem.redraw()
+        var hotkey = prefs.hotkey
+        prefs.onChange = { [weak self] in
+            guard let self else { return }
+            agenda.settingsChanged()
+            statusItem.redraw()
+            alerts.setNeedsReschedule()
+            if prefs.hotkey != hotkey {
+                hotkey = prefs.hotkey
+                HotkeyCenter.shared.register(hotkey)
+            }
+        }
         _ = UpdaterController.shared   // starts Sparkle's scheduled checks; `shared` is lazy
         LaunchAtLogin.enableOnFirstLaunch()
         startSyncTriggers()
         // `open Kalendar.app --args -openPopoverAtLaunch YES` opens the popover for UI testing.
         // Delayed because the status item has no on-screen position yet at launch, and NSPopover
         // silently refuses to show against it.
+        if let directory = UserDefaults.standard.string(forKey: "renderSnapshots") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                Snapshots.render(model: model, settings: { [self] tab in
+                    SettingsView(accounts: self.accounts, cache: self.cache, engine: self.engine, alerts: self.alerts,
+                                 signIn: self.signIn, tab: tab)
+                }, to: directory)
+                NSApp.terminate(nil)
+            }
+        }
         if UserDefaults.standard.bool(forKey: "openPopoverAtLaunch") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.togglePopover() }
         }
@@ -100,6 +125,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func sync() { Task { await engine.syncAll() } }
+
+    /// The menu bar's next event (§12): the first timed event today, not declined, that hasn't ended.
+    private func nextEventToday() -> EventInstance? {
+        let now = Date()
+        guard let end = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now)),
+              let events = try? cache.events(from: now, to: end) else { return nil }
+        return events.first { !$0.allDay && !$0.isDeclined && $0.end > now }
+    }
 
     private func syncIfNeeded(maxAge: TimeInterval) { Task { await engine.syncIfNeeded(maxAge: maxAge) } }
 

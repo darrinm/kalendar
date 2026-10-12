@@ -33,7 +33,7 @@ struct AgendaList: View {
                             }
                             if section.isEmpty {
                                 Text("No events")
-                                    .font(.system(size: 12))
+                                    .font(.ui(12))
                                     .foregroundStyle(Theme.muted)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 6)
@@ -53,6 +53,10 @@ struct AgendaList: View {
             .onAppear {
                 if let target = model.scrollTarget { proxy.scrollTo(target, anchor: .top) }
             }
+            // keyboard selection (§11) keeps the selected row on screen
+            .onChange(of: model.selectedEvent) {
+                if let key = model.selectedEvent { proxy.scrollTo(key) }
+            }
         }
     }
 }
@@ -68,7 +72,7 @@ private struct DayHeader: View {
             Text(label).fontWeight(.bold)
             Text(date)
         }
-        .font(.system(size: 12))
+        .font(.ui(12))
         .foregroundStyle(isToday ? Theme.accent : Theme.muted)
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -85,7 +89,7 @@ private struct AllDayPill: View {
 
     var body: some View {
         Text(event.summary)
-            .font(.system(size: 12, weight: .medium))
+            .font(.ui(12, weight: .medium))
             .foregroundStyle(.white)
             .lineLimit(1)
             .padding(.horizontal, 8)
@@ -107,28 +111,29 @@ private struct EventRow: View {
     @State private var anchor: NSView?
 
     var body: some View {
-        let past = event.end <= now
+        let past = event.end <= now && Preferences.shared.dimPast
         HStack(alignment: .top, spacing: 8) {
             dot.padding(.top, 4)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Text(Formatting.timeRange(event.start, event.end))
-                        .font(.system(size: 12, weight: .medium))
+                    Text(Preferences.shared.showEventEnds ? Formatting.timeRange(event.start, event.end)
+                                                           : event.start.formatted(date: .omitted, time: .shortened))
+                        .font(.ui(12, weight: .medium))
                         .foregroundStyle(Theme.muted)
                     if event.conferenceURL != nil {
                         Image(systemName: "video.fill")
-                            .font(.system(size: 9))
+                            .font(.ui(9))
                             .foregroundStyle(Theme.muted)
                             .accessibilityLabel("Video call")
                     }
                 }
                 Text(event.summary)
-                    .font(.system(size: 13))
+                    .font(.ui(13))
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
                 if let location = event.location, !location.isEmpty {
                     Text(location)
-                        .font(.system(size: 11))
+                        .font(.ui(11))
                         .foregroundStyle(Theme.muted)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -155,12 +160,22 @@ private struct EventRow: View {
         .contextMenu { EventContextMenu(event: event, actions: actions) }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
+        .accessibilityValue(isSelected ? "selected" : "")
+        .accessibilityActions {
+            if let link = event.conferenceURL.flatMap(URL.init(string:)) {
+                Button("Join meeting") { NSWorkspace.shared.open(link) }
+            }
+        }
     }
 
-    /// Filled for accepted or own events, open for not-yet-accepted invitations (§4.3).
+    /// Filled for accepted or own events, open for not-yet-accepted invitations, ⊘ for declined
+    /// ones when they are shown (§4.3).
     @ViewBuilder private var dot: some View {
         let color = model.color(for: event)
-        if event.isTentative {
+        if event.isDeclined {
+            Image(systemName: "circle.slash").font(.ui(9)).foregroundStyle(color).frame(width: 8, height: 8)
+                .accessibilityLabel("Declined")
+        } else if event.isTentative {
             Circle().strokeBorder(color, lineWidth: 1.5).frame(width: 8, height: 8)
         } else {
             Circle().fill(color).frame(width: 8, height: 8)
@@ -211,7 +226,7 @@ private struct EventContextMenu: View {
 private struct JoinButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .semibold))
+            .font(.ui(12, weight: .semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 4)

@@ -24,6 +24,7 @@ enum Theme {
     static let bad = Color(light: 0xC0392B, dark: 0xF87171)
 
     static let nsBackground = NSColor(light: 0xF6F8FB, dark: 0x0B1119)
+    static let nsAccent = NSColor(light: 0x00AAFF, dark: 0x33BBFF)
 }
 
 extension NSColor {

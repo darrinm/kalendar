@@ -26,10 +26,11 @@ final class ContactsTests: XCTestCase {
         e.summary = "x"
         try cache.upsert([e])
 
-        let found = try cache.contacts(matching: "da")
+        let all = try cache.allContacts()
+        let found = all.matching("da")
         XCTAssertEqual(found.map(\.email), ["adam@example.com", "dana@example.com", "daria@other.com", "sam@dash.com"])
         XCTAssertFalse(found.contains { $0.email == "me@a.com" }, "the user's own attendee entry is not a suggestion")
-        XCTAssertEqual(try cache.uniqueContactEmail(named: "dana"), "dana@example.com")
-        XCTAssertNil(try cache.uniqueContactEmail(named: "sam lee"))
+        XCTAssertEqual(all.uniqueEmail(named: "dana"), "dana@example.com")
+        XCTAssertNil(all.uniqueEmail(named: "sam lee"))
     }
 }

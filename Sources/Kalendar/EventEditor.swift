@@ -34,7 +34,7 @@ struct EventEditor: View {
                             Spacer()
                             Button("Add Event", action: onAdd)
                                 .buttonStyle(.borderedProminent)
-                                .disabled(model.draft.summary.trimmingCharacters(in: .whitespaces).isEmpty)
+                                .disabled(!model.canAdd)
                             Spacer()
                             Color.clear.frame(width: 24, height: 18)
                         }

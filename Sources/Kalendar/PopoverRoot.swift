@@ -26,7 +26,7 @@ struct PopoverRoot: View {
                     if agenda.searchMode {
                         Theme.line.frame(height: 1)
                         AgendaList(model: agenda, sections: agenda.searchResults, extendsAtEnd: false, actions: model)
-                    } else if let form = model.newItem.form, !model.input.isEmpty {
+                    } else if let form = model.newItem.form {
                         // the new-item form, live as the input changes (§5)
                         Theme.line.frame(height: 1)
                         EventEditor(model: form, onAdd: model.addNewItem)

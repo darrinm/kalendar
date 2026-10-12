@@ -17,7 +17,6 @@ public struct ParsedItem: Equatable {
     public var end: Date
     /// Whether the text named a date (a task's "due" checkbox, §5.1).
     public var hasDate = false
-    public var hasTime = false
     public var recurrence: RecurrenceRule?
     /// Minutes before the start; empty means the calendar's defaults (or none for all-day).
     public var alerts: [Int] = []
@@ -97,6 +96,12 @@ public struct NLParser {
     private struct State {
         var tokens: [Token]
         var consumed: [Bool]
+
+        init(tokens: [Token]) {
+            self.tokens = tokens
+            consumed = Array(repeating: false, count: tokens.count)
+        }
+
         var day: Date?
         var rangeEnd: Date?
         var time: (h: Int, m: Int)?
@@ -115,8 +120,7 @@ public struct NLParser {
     }
 
     public func parse(_ text: String) -> ParsedItem {
-        var s = State(tokens: Self.tokenize(text), consumed: [])
-        s.consumed = Array(repeating: false, count: s.tokens.count)
+        var s = State(tokens: Self.tokenize(text))
         var item = ParsedItem(start: now, end: now)
 
         if let first = s.word(0), ["todo", "task", "reminder", "√", "todo:", "task:", "reminder:"].contains(first) {
@@ -240,7 +244,7 @@ public struct NLParser {
 
     /// After "for": a duration ("for 15 minutes") or a repeat count ("for 10 times").
     private func forPhrase(_ s: inout State, at i: Int) -> Int? {
-        if let w = s.word(i), let n = Int(w) ?? Self.numberWords[w].map(Int.init), s.word(i + 1) == "times" {
+        if let w = s.word(i), let n = Self.integer(w), s.word(i + 1) == "times" {
             s.count = n
             return 2
         }
@@ -257,7 +261,7 @@ public struct NLParser {
         if w == "other" {
             interval = 2
             j += 1
-        } else if let n = Int(w) ?? Self.numberWords[w].map(Int.init), n > 1 {
+        } else if let n = Self.integer(w), n > 1 {
             interval = n
             j += 1
         }
@@ -338,7 +342,7 @@ public struct NLParser {
            let d1 = Int(w[..<dash].filter(\.isNumber)), let d2 = Int(w[w.index(after: dash)...].filter(\.isNumber)),
            let start = dayDate(month: month, day: d1, year: nil), let end = dayDate(month: month, day: d2, year: nil) {
             s.day = start
-            s.rangeEnd = end < start ? calendar.date(byAdding: .year, value: 1, to: end) : end
+            s.rangeEnd = wrapYear(end, after: start)
             s.consume(i, 2)
             return 2
         }
@@ -346,7 +350,7 @@ public struct NLParser {
         if let (d1, n1) = date(s, at: i), let sep = s.word(i + n1), ["to", "until", "-", "–", "through", "thru"].contains(sep),
            let (d2, n2) = date(s, at: i + n1 + 1) {
             s.day = d1
-            s.rangeEnd = d2 < d1 ? calendar.date(byAdding: .year, value: 1, to: d2) : d2
+            s.rangeEnd = wrapYear(d2, after: d1)
             s.consume(i, n1 + 1 + n2)
             return n1 + 1 + n2
         }
@@ -458,18 +462,13 @@ public struct NLParser {
         var day = s.day ?? defaultDay.map(calendar.startOfDay(for:)) ?? today
         // a weekly rule with no date starts on its first matching day
         if s.day == nil, let r = recurrence, r.frequency == .weekly, !r.weekdays.isEmpty {
-            var d = day
-            for _ in 0..<7 where !r.weekdays.contains(calendar.component(.weekday, from: d)) {
-                d = calendar.date(byAdding: .day, value: 1, to: d)!
-            }
-            day = d
+            day = r.weekdays.map { coming(weekday: $0, from: day) }.min()!
         }
 
         var time = s.time
         if time == nil && s.evening { time = (19, 0) }
         if let t = time, !s.allDayWords {
             item.allDay = false
-            item.hasTime = true
             var start = calendar.date(bySettingHour: t.h, minute: t.m, second: 0, of: day)!
             // a time alone that already passed today means tomorrow
             if s.day == nil, defaultDay == nil, recurrence == nil, start < now {
@@ -499,11 +498,16 @@ public struct NLParser {
 
     // MARK: Dates
 
-    /// The next day with this weekday, today included.
-    private func coming(weekday: Int) -> Date {
-        let today = calendar.startOfDay(for: now)
-        let ahead = (weekday - calendar.component(.weekday, from: today) + 7) % 7
-        return calendar.date(byAdding: .day, value: ahead, to: today)!
+    /// The next day with this weekday, `from` (default today) included.
+    private func coming(weekday: Int, from: Date? = nil) -> Date {
+        let start = calendar.startOfDay(for: from ?? now)
+        let ahead = (weekday - calendar.component(.weekday, from: start) + 7) % 7
+        return calendar.date(byAdding: .day, value: ahead, to: start)!
+    }
+
+    /// The end of a range that came out before its start ("Dec 28 to Jan 3") is next year.
+    private func wrapYear(_ end: Date, after start: Date) -> Date {
+        end < start ? calendar.date(byAdding: .year, value: 1, to: end)! : end
     }
 
     /// That weekday in next week (weeks start on the calendar's first weekday).
@@ -534,6 +538,9 @@ public struct NLParser {
         "eight": 8, "nine": 9, "ten": 10, "fifteen": 15, "twenty": 20, "thirty": 30, "half": 0.5,
     ]
 
+    /// "3" or "three".
+    static func integer(_ w: String) -> Int? { Int(w) ?? numberWords[w].map(Int.init) }
+
     static func unitMinutes(_ unit: String) -> Int? {
         switch unit {
         case "m", "min", "mins", "minute", "minutes": 1
@@ -563,13 +570,13 @@ public struct NLParser {
     /// Weekday and month abbreviations that are also common words.
     private static let ambiguous: Set<String> = ["sun", "sat", "wed", "mon", "may", "mar"]
 
+    private static let fullMonthNames = ["january", "february", "march", "april", "may", "june", "july", "august",
+                                         "september", "october", "november", "december"]
     private static let monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
     static func monthNumber(_ w: String) -> Int? {
         guard w.count >= 3, w.allSatisfy(\.isLetter) else { return nil }
-        let full = ["january", "february", "march", "april", "may", "june", "july", "august", "september",
-                    "october", "november", "december"]
-        if let i = full.firstIndex(of: w) { return i + 1 }
+        if let i = fullMonthNames.firstIndex(of: w) { return i + 1 }
         if w == "sept" { return 9 }
         return monthNames.firstIndex(of: w).map { $0 + 1 }
     }

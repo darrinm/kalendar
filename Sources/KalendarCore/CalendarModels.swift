@@ -183,3 +183,32 @@ public struct Contact: Codable, Equatable, Hashable, FetchableRecord, Persistabl
         self.photoURL = photoURL
     }
 }
+
+extension Array where Element == Contact {
+    /// Contacts whose name or email contains `query`; names with a word starting with it come
+    /// first, then emails starting with it (§5.2: "fuzzy on first/last name").
+    public func matching(_ query: String, limit: Int = 8) -> [Contact] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return [] }
+        func rank(_ c: Contact) -> Int? {
+            let name = (c.name ?? "").lowercased(), email = c.email.lowercased()
+            if name.split(separator: " ").contains(where: { $0.hasPrefix(q) }) { return 0 }
+            if email.hasPrefix(q) { return 1 }
+            return name.contains(q) || email.contains(q) ? 2 : nil
+        }
+        return compactMap { c in rank(c).map { (c, $0) } }
+            .sorted { ($0.1, $0.0.name ?? $0.0.email) < ($1.1, $1.0.name ?? $1.0.email) }
+            .prefix(limit).map(\.0)
+    }
+
+    /// The email of the one contact whose full or first name is `name`, for `with <name>` (§5.2).
+    /// nil when no contact matches or several do.
+    public func uniqueEmail(named name: String) -> String? {
+        let lower = name.lowercased()
+        let emails = Set(filter { c in
+            guard let n = c.name?.lowercased() else { return false }
+            return n == lower || n.split(separator: " ").first.map(String.init) == lower
+        }.map { $0.email.lowercased() })
+        return emails.count == 1 ? first { $0.email.lowercased() == emails.first }?.email : nil
+    }
+}

@@ -38,10 +38,13 @@ final class NewItemModel {
     @ObservationIgnored private var chosenCalendar: CalendarInfo?
     @ObservationIgnored private var chosenLocation: String?
     @ObservationIgnored private var chosenInvitees: [Contact] = []
-    @ObservationIgnored private var dismissedTrigger: String?
+    /// The suggestion list Esc hid; it stays hidden until the token changes.
+    @ObservationIgnored private var dismissedTrigger: (kind: SuggestionTrigger.Kind, query: String)?
     @ObservationIgnored private let places = PlaceSearch()
-    /// `with <name>` lookups for this entry, so each keystroke queries the cache once, not twice.
-    @ObservationIgnored private var contactEmails: [String: String?] = [:]
+    /// Everyone a `with` or invitee suggestion can offer, loaded once per entry (§18.4).
+    @ObservationIgnored private var loadedContacts: [Contact]?
+    /// Recent locations for the current `at` query, kept while Apple Maps results arrive.
+    @ObservationIgnored private var recent: (query: String, locations: [String])?
 
     init(agenda: AgendaModel, writer: EventWriter, accounts: AccountStore) {
         self.agenda = agenda
@@ -71,7 +74,7 @@ final class NewItemModel {
             reset()
             return
         }
-        let parser = NLParser(defaultDay: defaultDay) { [weak self] in self?.contactEmail(named: $0) }
+        let parser = NLParser(defaultDay: defaultDay) { [weak self] in self?.contacts.uniqueEmail(named: $0) }
         let parsed = parser.parse(input)
         guard let calendar = calendar(for: parsed.calendarQuery) else { return }
         var draft = EventDraft(parsed: parsed, account: calendar.account, calendarId: calendar.id)
@@ -92,18 +95,25 @@ final class NewItemModel {
 
         let previous = trigger
         trigger = parsed.trigger
-        if let t = trigger, "\(t.kind)|\(t.query)" == dismissedTrigger { trigger = nil }
+        if let t = trigger, let d = dismissedTrigger, d.kind == t.kind, d.query == t.query { trigger = nil }
         // a new or narrowed list starts at its first row
         if trigger?.kind != previous?.kind || trigger?.query != previous?.query { selected = 0 }
         if trigger?.kind == .location { places.query = trigger!.query } else { places.query = "" }
         refreshSuggestions()
     }
 
-    private func contactEmail(named name: String) -> String? {
-        if let cached = contactEmails[name] { return cached }
-        let email = try? agenda.cache.uniqueContactEmail(named: name)
-        contactEmails[name] = email
-        return email
+    private var contacts: [Contact] {
+        if let loadedContacts { return loadedContacts }
+        let all = (try? agenda.cache.allContacts()) ?? []
+        loadedContacts = all
+        return all
+    }
+
+    private func recentLocations(_ query: String) -> [String] {
+        if let recent, recent.query == query { return recent.locations }
+        let locations = (try? agenda.cache.recentLocations(matching: query)) ?? []
+        recent = (query, locations)
+        return locations
     }
 
     private func refreshSuggestions() {
@@ -118,10 +128,9 @@ final class NewItemModel {
                 .filter { $0.isWritable && (q.isEmpty || $0.summary.lowercased().hasPrefix(q)) }
                 .map(Suggestion.calendar)
         case .contact:
-            suggestions = q.isEmpty ? [] : ((try? agenda.cache.contacts(matching: trigger.query)) ?? []).map(Suggestion.contact)
+            suggestions = contacts.matching(trigger.query).map(Suggestion.contact)
         case .location:
-            let recent = ((try? agenda.cache.recentLocations(matching: trigger.query)) ?? [])
-                .map { Suggestion.place(title: $0, subtitle: "") }
+            let recent = recentLocations(trigger.query).map { Suggestion.place(title: $0, subtitle: "") }
             suggestions = Array((recent + places.results.map { Suggestion.place(title: $0.title, subtitle: $0.subtitle) }).prefix(8))
         }
         selected = min(selected, max(suggestions.count - 1, 0))
@@ -131,7 +140,7 @@ final class NewItemModel {
 
     /// Esc on an open list: hide it until the token changes.
     func dismissSuggestions() {
-        if let t = trigger { dismissedTrigger = "\(t.kind)|\(t.query)" }
+        if let t = trigger { dismissedTrigger = (t.kind, t.query) }
         trigger = nil
         suggestions = []
     }
@@ -162,8 +171,8 @@ final class NewItemModel {
 
     /// Adds the event (§5.4). Returns false when there is nothing to add.
     func add() -> Bool {
-        guard let form, !form.draft.summary.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
-        form.add()
+        guard let form, form.canAdd else { return false }
+        writer.insert(form.draft)
         if UserDefaults.standard.object(forKey: "playSounds") as? Bool ?? true { NSSound(named: "Pop")?.play() }
         reset()
         defaultDay = nil
@@ -181,7 +190,8 @@ final class NewItemModel {
         chosenLocation = nil
         chosenInvitees = []
         dismissedTrigger = nil
-        contactEmails = [:]
+        loadedContacts = nil
+        recent = nil
         places.query = ""
     }
 }

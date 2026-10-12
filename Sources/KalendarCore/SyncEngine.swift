@@ -44,17 +44,21 @@ public final class SyncEngine {
     /// includes the write, so the overlay can go.
     @ObservationIgnored private var pendingSelected: [String: (selected: Bool, landedAt: Int?)] = [:]
 
-    /// When each account's contacts were last fetched; contacts refresh at most daily (§18.4).
-    @ObservationIgnored private var contactsSynced: [String: Date] = [:]
+    /// Where each account's last contact fetch time is kept, so a relaunch doesn't refetch (§18.4).
+    @ObservationIgnored private let defaults: UserDefaults
 
     static let windowRadius: TimeInterval = 365 * 86400
     static let staleWindow: TimeInterval = 30 * 86400
 
-    public init(accounts: AccountStore, cache: CalendarCache, now: @escaping () -> Date = Date.init) {
+    public init(accounts: AccountStore, cache: CalendarCache, defaults: UserDefaults = .standard,
+                now: @escaping () -> Date = Date.init) {
         self.accounts = accounts
         self.cache = cache
+        self.defaults = defaults
         self.now = now
     }
+
+    private static func contactsKey(_ account: String) -> String { "contactsSynced.\(account)" }
 
     /// Syncs every signed-in account. A call while a sync runs schedules exactly one more after it.
     public func syncAll() async {
@@ -231,7 +235,7 @@ public final class SyncEngine {
     /// skipped. Any other failure only logs: suggestions keep the previous contacts, the next sync
     /// tries again, and calendar sync goes on.
     private func syncContactsIfStale(account: String) async {
-        if let last = contactsSynced[account], now().timeIntervalSince(last) < 86400 { return }
+        if let last = defaults.object(forKey: Self.contactsKey(account)) as? Date, now().timeIntervalSince(last) < 86400 { return }
         var contacts: [Contact] = []
         for source in GooglePeopleAPI.Source.allCases {
             do {
@@ -247,11 +251,13 @@ public final class SyncEngine {
             }
         }
         try? cache.replaceContacts(contacts, account: account)
-        contactsSynced[account] = now()
+        defaults.set(now(), forKey: Self.contactsKey(account))
     }
 
     /// Refresh All (⇧⌘R) also refetches contacts.
-    public func forgetContactSync() { contactsSynced = [:] }
+    public func forgetContactSync() {
+        for account in accounts.accounts { defaults.removeObject(forKey: Self.contactsKey(account.email)) }
+    }
 
     /// Replaces a series' cached instances with Google's current ones (after a write to the series).
     public func refreshSeries(_ seriesId: String, account: String, calendarId: String) async {

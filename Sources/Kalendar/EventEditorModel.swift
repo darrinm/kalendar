@@ -50,10 +50,8 @@ final class EventEditorModel {
         original = parsed
     }
 
-    /// Adds the new event (§5.4).
-    func add() {
-        writer.insert(draft)
-    }
+    /// The new-item form's Add Event needs a title.
+    var canAdd: Bool { !draft.summary.trimmingCharacters(in: .whitespaces).isEmpty }
 
     private func loadSeries() async {
         guard let series = await writer.series(of: event) else { return }

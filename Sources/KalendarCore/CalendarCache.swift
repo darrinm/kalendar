@@ -316,49 +316,20 @@ public final class CalendarCache: @unchecked Sendable {
         }
     }
 
-    /// People for an invitee or `with` suggestion (§5.1, §5.2): contacts from both accounts, then
-    /// attendees of cached events, each email once. Names that start with the query (first or last
-    /// name) come before other matches.
-    public func contacts(matching query: String, limit: Int = 8) throws -> [Contact] {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return [] }
-        let like = Self.containsPattern(q)
-        return try db.read { db in
-            var found = try Contact.fetchAll(db, sql: """
-                SELECT * FROM contact WHERE name LIKE :p ESCAPE '\\' OR email LIKE :p ESCAPE '\\'
-                LIMIT 200
-                """, arguments: ["p": like])
+    /// Everyone suggestions can offer (§5.1, §18.4): contacts from both accounts, then attendees of
+    /// cached events, each email once. The new-item form loads this once per entry and filters it in
+    /// memory as the user types.
+    public func allContacts() throws -> [Contact] {
+        try db.read { db in
+            let saved = try Contact.fetchAll(db)
             let attendees = try Row.fetchAll(db, sql: """
                 SELECT DISTINCT json_extract(value, '$.email') AS email, json_extract(value, '$.displayName') AS name
                 FROM event, json_each(event.attendees)
                 WHERE NOT json_extract(value, '$.isSelf')
-                  AND (json_extract(value, '$.email') LIKE :p ESCAPE '\\'
-                       OR json_extract(value, '$.displayName') LIKE :p ESCAPE '\\')
-                LIMIT 200
-                """, arguments: ["p": like])
-            found += attendees.map { Contact(account: "", email: $0["email"], name: $0["name"], photoURL: nil) }
+                """).map { Contact(account: "", email: $0["email"], name: $0["name"], photoURL: nil) }
             var seen = Set<String>()
-            let unique = found.filter { seen.insert($0.email.lowercased()).inserted }
-            let lower = q.lowercased()
-            func rank(_ c: Contact) -> Int {
-                let words = (c.name ?? "").lowercased().split(separator: " ")
-                if words.contains(where: { $0.hasPrefix(lower) }) { return 0 }
-                if c.email.lowercased().hasPrefix(lower) { return 1 }
-                return 2
-            }
-            return Array(unique.sorted { (rank($0), $0.name ?? $0.email) < (rank($1), $1.name ?? $1.email) }.prefix(limit))
+            return (saved + attendees).filter { seen.insert($0.email.lowercased()).inserted }
         }
-    }
-
-    /// The email of the one contact whose full or first name is `name`, for `with <name>` (§5.2).
-    /// nil when no contact matches or several do.
-    public func uniqueContactEmail(named name: String) throws -> String? {
-        let lower = name.lowercased()
-        let matches = try contacts(matching: name, limit: 50).filter { c in
-            guard let n = c.name?.lowercased() else { return false }
-            return n == lower || n.split(separator: " ").first.map(String.init) == lower
-        }
-        return Set(matches.map { $0.email.lowercased() }).count == 1 ? matches[0].email : nil
     }
 
     /// Locations of past events that contain `query`, most recent first (§5.2: "previous

@@ -3,6 +3,8 @@ import Foundation
 
 public enum GooglePeopleAPI {
     static let base = "https://people.googleapis.com/v1"
+    /// What Kalendar reads from each person: the same for all three lists.
+    static let fields = "names,emailAddresses,photos"
 
     public enum Source: CaseIterable {
         case connections, otherContacts, directory
@@ -13,13 +15,13 @@ public enum GooglePeopleAPI {
                 switch self {
                 case .connections:
                     c = URLComponents(string: base + "/people/me/connections")!
-                    c.queryItems = [.init(name: "personFields", value: "names,emailAddresses,photos")]
+                    c.queryItems = [.init(name: "personFields", value: fields)]
                 case .otherContacts:
                     c = URLComponents(string: base + "/otherContacts")!
-                    c.queryItems = [.init(name: "readMask", value: "names,emailAddresses,photos")]
+                    c.queryItems = [.init(name: "readMask", value: fields)]
                 case .directory:
                     c = URLComponents(string: base + "/people:listDirectoryPeople")!
-                    c.queryItems = [.init(name: "readMask", value: "names,emailAddresses,photos"),
+                    c.queryItems = [.init(name: "readMask", value: fields),
                                     .init(name: "sources", value: "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE")]
                 }
                 c.queryItems! += [.init(name: "pageSize", value: "1000")]

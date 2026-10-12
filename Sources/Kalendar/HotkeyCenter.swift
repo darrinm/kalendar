@@ -110,12 +110,22 @@ struct ShortcutRecorder: View {
             }
         }
         .onDisappear { if recording { stop() } }
+        // the Settings window is kept when closed, so onDisappear alone does not end recording
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            if recording { stop() }
+        }
     }
 
     private func start() {
         recording = true
         HotkeyCenter.shared.suspend()
+        // the Settings window; a key typed in any other window (the Mini Window, say) ends recording
+        let window = NSApp.keyWindow
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.window === window else {
+                stop()
+                return event
+            }
             if event.keyCode == UInt16(kVK_Escape) {
                 stop()
             } else if let hotkey = Preferences.Hotkey(event: event) {

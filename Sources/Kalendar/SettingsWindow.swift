@@ -188,6 +188,9 @@ private struct CalendarsSettings: View {
     let cache: CalendarCache
     let engine: SyncEngine
     @Bindable private var prefs = Preferences.shared
+    /// Toggled calendars whose write is in flight. The cache changes at once, but this view
+    /// re-reads it only when the overlay or `lastSync` changes.
+    @State private var pending: [String: Bool] = [:]
 
     var body: some View {
         let _ = engine.lastSync
@@ -197,8 +200,16 @@ private struct CalendarsSettings: View {
             ForEach(calendars.keys.sorted(), id: \.self) { account in
                 Section("Calendars: \(account)") {
                     ForEach(calendars[account]!, id: \.key) { calendar in
-                        Toggle(isOn: Binding(get: { calendar.selected }, set: { selected in
-                            Task { try? await engine.setSelected(selected, calendar: calendar) }
+                        Toggle(isOn: Binding(get: { pending[calendar.key] ?? calendar.selected }, set: { selected in
+                            pending[calendar.key] = selected
+                            Task {
+                                do {
+                                    try await engine.setSelected(selected, calendar: calendar)
+                                } catch {
+                                    Log.sync.error("calendar visibility write failed: \(error.localizedDescription)")
+                                }
+                                pending[calendar.key] = nil
+                            }
                         })) {
                             HStack {
                                 Circle().fill(Color(hex: calendar.backgroundColor)).frame(width: 8, height: 8)

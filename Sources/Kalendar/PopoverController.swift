@@ -305,13 +305,27 @@ final class PopoverModel {
         }
     }
 
-    /// The rows on screen, in order: search results, the Tasks view, or the agenda.
+    /// The rows on screen, in order: search results, the Tasks view, or the agenda. An event that
+    /// spans several days is listed once, at its first day, so ↓ can move past it.
     var listItems: [ListItem] {
-        if agenda.searchMode { return agenda.searchResults.flatMap { ($0.allDay + $0.timed).map(ListItem.event) } }
-        if agenda.showsTasks { return agenda.taskRows.map { .task($0.task) } }
-        return agenda.sections.flatMap { s in
-            s.allDay.map(ListItem.event) + s.tasks.map(ListItem.task) + s.timed.map(ListItem.event)
+        let items: [ListItem]
+        if agenda.searchMode {
+            items = agenda.searchResults.flatMap { ($0.allDay + $0.timed).map(ListItem.event) }
+        } else if agenda.showsTasks {
+            items = agenda.taskRows.map { .task($0.task) }
+        } else {
+            items = agenda.sections.flatMap { s in
+                s.allDay.map(ListItem.event) + s.tasks.map(ListItem.task) + s.timed.map(ListItem.event)
+            }
         }
+        var seen = Set<String>()
+        return items.filter { seen.insert($0.key).inserted }
+    }
+
+    /// The selected row, if it is still listed.
+    private var selectedItem: ListItem? {
+        guard let key = agenda.selectedEvent else { return nil }
+        return listItems.first { $0.key == key }
     }
 
     func moveSelection(by delta: Int) {
@@ -324,7 +338,7 @@ final class PopoverModel {
 
     /// Enter, ⌘E: the selection's detail popover beside the Mini Window.
     func openSelection() {
-        switch listItems.first(where: { $0.key == agenda.selectedEvent }) {
+        switch selectedItem {
         case .event(let e): openEvent(e, anchor: nil)
         case .task(let t): openTask(t, anchor: nil)
         case nil: break
@@ -346,8 +360,7 @@ final class PopoverModel {
 
     /// The selected event, if it is still cached.
     var selectedEvent: EventInstance? {
-        guard let key = agenda.selectedEvent else { return nil }
-        if case .event(let e) = listItems.first(where: { $0.key == key }) { return e }
+        if case .event(let e) = selectedItem { return e }
         return nil
     }
 
@@ -371,8 +384,7 @@ final class PopoverModel {
 
     /// The selected task, in the agenda or the Tasks view.
     var selectedTask: TaskItem? {
-        guard let key = agenda.selectedEvent else { return nil }
-        if case .task(let t) = listItems.first(where: { $0.key == key }) { return t }
+        if case .task(let t) = selectedItem { return t }
         return nil
     }
 
@@ -386,7 +398,7 @@ final class PopoverModel {
         if let event = selectedEvent { delete(event) } else if let task = selectedTask { deleteTask(task) }
     }
 
-    var hasSelection: Bool { selectedEvent != nil || selectedTask != nil }
+    var hasSelection: Bool { selectedItem != nil }
 
     /// Duplicate as Task (§7.1): due on the event's day, in the event account's first list.
     func duplicateAsTask(_ event: EventInstance) {

@@ -77,6 +77,7 @@ final class AgendaModel {
         didSet { if isVisible && stale { reloadAll() } }
     }
     @ObservationIgnored private var stale = false
+    @ObservationIgnored private var listDaysShown = Preferences.shared.listDays
     @ObservationIgnored private var calendarsByKey: [String: CalendarInfo] = [:]
     @ObservationIgnored private var eventColors: [String: [String: String]] = [:]
     @ObservationIgnored private var searchTask: Task<Void, Never>?
@@ -191,7 +192,7 @@ final class AgendaModel {
             !t.completed && t.due! < today ? today : t.due!
         }
         marks = Dictionary(uniqueKeysWithValues: grid.map { day in
-            // "Show declined events" is off (§2): declined events get no dot
+            // declined events never get a dot, whatever "Show declined events" says (§4.2)
             (day, DayMarks(colors: (byDay[day] ?? []).filter { !$0.isDeclined }.map(color(for:)),
                            tasks: tasksByDay[day]?.contains { !$0.completed } ?? false))
         })
@@ -209,7 +210,11 @@ final class AgendaModel {
 
     /// Settings that change what the grid or the list shows.
     func settingsChanged() {
-        startList(at: selectedDay)
+        // a new list length starts the list again; other settings keep how far it has scrolled
+        if prefs.listDays != listDaysShown {
+            listDaysShown = prefs.listDays
+            startList(at: selectedDay)
+        }
         cacheChanged()
     }
 
@@ -251,8 +256,8 @@ final class AgendaModel {
     }
 
     private func section(for day: Date, events: [EventInstance]) -> DaySection {
-        // "Show declined events" is off (§2); identical events on several calendars show once (§4.3)
-        // identical events on several calendars show once (§4.3) unless that's turned off
+        // declined events only with "Show declined events" (§12); identical events on several
+        // calendars show once (§4.3) unless "Combine identical events" is off
         var seen = Set<EventInstance.DuplicateKey>()
         let shown = events.filter { e in
             (prefs.showDeclined || !e.isDeclined) && (!prefs.combineIdentical || seen.insert(e.duplicateKey).inserted)

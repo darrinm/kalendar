@@ -21,7 +21,8 @@ struct AgendaList: View {
                             DayHeader(day: section.day, today: model.today)
                                 .id(section.day)
                             ForEach(section.allDay, id: \.key) { event in
-                                AllDayPill(event: event, color: model.color(for: event))
+                                AllDayPill(event: event, color: model.color(for: event),
+                                           isSelected: model.selectedEvent == event.key)
                             }
                             ForEach(section.tasks, id: \.key) { task in
                                 TaskRow(task: task, actions: actions)
@@ -86,6 +87,8 @@ private struct DayHeader: View {
 private struct AllDayPill: View {
     let event: EventInstance
     let color: Color
+    /// Keyboard selection (§11): the row selection color behind the pill.
+    let isSelected: Bool
 
     var body: some View {
         Text(event.summary)
@@ -95,9 +98,13 @@ private struct AllDayPill: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color, in: RoundedRectangle(cornerRadius: 6))
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 8)
             .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 8)
             .accessibilityLabel("All day: \(event.summary)")
+            .accessibilityValue(isSelected ? "selected" : "")
     }
 }
 
@@ -111,7 +118,8 @@ private struct EventRow: View {
     @State private var anchor: NSView?
 
     var body: some View {
-        let past = event.end <= now && Preferences.shared.dimPast
+        // events that ended today are always dimmed (§4.3); earlier days' only with the setting (§12)
+        let past = event.end <= now && (event.end > model.today || Preferences.shared.dimPast)
         HStack(alignment: .top, spacing: 8) {
             dot.padding(.top, 4)
             VStack(alignment: .leading, spacing: 1) {

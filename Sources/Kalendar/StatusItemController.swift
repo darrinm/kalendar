@@ -24,10 +24,14 @@ final class StatusItemController: NSObject {
         button.action = #selector(clicked)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         redraw()
-        // the countdown and the next event move on each minute
-        minuteTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        // the countdown and the next event move on each minute, so the timer fires on the minute
+        let nextMinute = Calendar.current.nextDate(after: Date(), matching: DateComponents(second: 0),
+                                                   matchingPolicy: .nextTime) ?? Date().addingTimeInterval(60)
+        let timer = Timer(fire: nextMinute, interval: 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.redraw() }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        minuteTimer = timer
         // the day number changes at midnight, when the clock or time zone changes, and across sleep
         let centers: [(NotificationCenter, Notification.Name)] = [
             (.default, .NSCalendarDayChanged), (.default, .NSSystemClockDidChange),

@@ -33,7 +33,12 @@ final class Preferences {
     @ObservationIgnored var onChange: () -> Void = {}
 
     // General
-    var hotkey: Hotkey { didSet { save(hotkey.keyCode, "hotkeyKeyCode"); save(hotkey.modifiers, "hotkeyModifiers") } }
+    var hotkey: Hotkey {
+        didSet {
+            defaults.set(hotkey.keyCode, forKey: "hotkeyKeyCode")
+            save(hotkey.modifiers, "hotkeyModifiers")   // one onChange for both keys
+        }
+    }
     /// A `CalendarInfo.key`; nil uses the first account's primary calendar.
     var defaultCalendar: String? { didSet { save(defaultCalendar, "defaultCalendar") } }
     /// A `TaskList.key`; nil uses the first account's first list.
@@ -79,7 +84,7 @@ final class Preferences {
         defaultTaskList = defaults.string(forKey: "defaultTaskList")
         defaultDuration = value("defaultDuration", 60)
         firstWeekday = value("firstWeekday", 0)
-        dayStartHour = value("dayStartHour", 9)
+        dayStartHour = value("dayStartHour", 8)
         playSounds = value("playSounds", true)
         goToTodayAfterAdding = value("goToTodayAfterAdding", true)
         showAlerts = value("showAlerts", true)
@@ -91,9 +96,9 @@ final class Preferences {
         showEventEnds = value("showEventEnds", true)
         showDeclined = value("showDeclined", false)
         combineIdentical = value("combineIdentical", true)
-        dimPast = value("dimPast", true)
+        dimPast = value("dimPast", false)
         showTasksInList = value("showTasksInList", true)
-        showCompletedTasks = value("showCompletedTasks", false)
+        showCompletedTasks = value("showCompletedTasks", true)
         taskSort = TaskSort(rawValue: value("taskSort", "")) ?? .dueDate
         hiddenTaskLists = Set(value("hiddenTaskLists", [String]()))
     }

@@ -116,17 +116,26 @@ public enum GoogleCalendarAPI {
     static func iso(_ date: Date) -> String { internetDate.string(from: date) }
 
     /// "2026-10-12" is a calendar day, not an instant: midnight in the user's time zone. Used for
-    /// all-day events and task due dates.
+    /// all-day events and task due dates. Google's days are Gregorian whatever `calendar` is.
     static func localDay(_ ymd: some StringProtocol, calendar: Calendar) -> Date? {
         let parts = ymd.prefix(10).split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3 else { return nil }
-        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+        return gregorian(calendar).date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
     }
 
-    /// The calendar day of `date` as "2026-10-12".
+    /// The Gregorian calendar day of `date` in `calendar`'s time zone, as "2026-10-12".
     static func ymd(_ date: Date, calendar: Calendar) -> String {
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        let c = gregorian(calendar).dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
+    }
+
+    /// A Gregorian calendar in `calendar`'s time zone: a Buddhist or Japanese system calendar
+    /// numbers years differently from Google's "YYYY-MM-DD".
+    private static func gregorian(_ calendar: Calendar) -> Calendar {
+        guard calendar.identifier != .gregorian else { return calendar }
+        var g = Calendar(identifier: .gregorian)
+        g.timeZone = calendar.timeZone
+        return g
     }
 
     public static func eventPath(calendarId: String, eventId: String? = nil) -> String {

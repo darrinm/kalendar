@@ -188,7 +188,8 @@ final class AgendaModel {
         // overdue incomplete tasks show under today, not on their past due day (§4.3)
         let tasks = prefs.showTasksInList ? visible((try? cache.tasks(dueFrom: from, to: to, overdueBefore: today)) ?? []) : []
         let tasksByDay = Dictionary(grouping: tasks) { t in
-            !t.completed && t.due! < today ? today : t.due!
+            let due = t.due!
+            return !t.completed && due < today ? today : due
         }
         marks = Dictionary(uniqueKeysWithValues: grid.map { day in
             // declined events never get a dot, whatever "Show declined events" says (§4.2)
@@ -197,7 +198,7 @@ final class AgendaModel {
         })
         sections = days(from: listStart, to: listEnd).map { day in
             var s = section(for: day, events: byDay[day] ?? [])
-            s.tasks = (tasksByDay[day] ?? []).sorted { ($0.completed ? 1 : 0, $0.due!, $0.title) < ($1.completed ? 1 : 0, $1.due!, $1.title) }
+            s.tasks = (tasksByDay[day] ?? []).sorted { ($0.completed ? 1 : 0, $0.dueDay!, $0.title) < ($1.completed ? 1 : 0, $1.dueDay!, $1.title) }
             return s
         }
     }
@@ -227,7 +228,7 @@ final class AgendaModel {
         // open tasks before completed ones in either sort
         let order: (TaskItem, TaskItem) -> Bool = switch taskSort {
         // undated last; then title, so the order is stable
-        case .dueDate: { ($0.completed ? 1 : 0, $0.due ?? .distantFuture, $0.title) < ($1.completed ? 1 : 0, $1.due ?? .distantFuture, $1.title) }
+        case .dueDate: { ($0.completed ? 1 : 0, $0.dueDay ?? "~", $0.title) < ($1.completed ? 1 : 0, $1.dueDay ?? "~", $1.title) }
         case .myOrder: { ($0.completed ? 1 : 0, $0.listKey, $0.position) < ($1.completed ? 1 : 0, $1.listKey, $1.position) }
         }
         taskRows = (byParent[nil] ?? []).sorted(by: order).flatMap { root in

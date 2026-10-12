@@ -60,7 +60,10 @@ public enum GoogleTasksAPI {
         public func task(account: String, listId: String) -> TaskItem {
             var t = TaskItem(account: account, listId: listId, id: id, title: title ?? "", notes: notes,
                              completed: status == "completed", parent: parent, position: position ?? "")
-            t.dueDay = due.map { String($0.prefix(10)) }
+            // a value that is not a day is no due date, so `dueDay` always parses
+            t.dueDay = due.map { String($0.prefix(10)) }.flatMap {
+                GoogleCalendarAPI.localDay($0, calendar: .current) == nil ? nil : $0
+            }
             return t
         }
 

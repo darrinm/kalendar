@@ -139,6 +139,12 @@ public final class SyncEngine {
         let calendars = try cache.calendars(account: account).filter { $0.accessRole != "freeBusyReader" }
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask { await self.syncContactsIfStale(account: account) }
+            // tasks failing (a refused scope, an outage of the Tasks API) leaves the calendars syncing
+            group.addTask {
+                do { try await self.syncTasks(account: account) } catch {
+                    Log.sync.error("tasks sync failed: \(error.localizedDescription)")
+                }
+            }
             for calendar in calendars {
                 group.addTask { try await self.sync(calendar: calendar) }
             }
@@ -227,6 +233,30 @@ public final class SyncEngine {
         } catch let error as GoogleCalendarAPI.APIError where error == .notFound || error == .syncTokenExpired {
             // 404 or 410 Gone on an instances request means the series was deleted
             return []
+        }
+    }
+
+    /// Google Tasks (§10): the lists, then each list's changes since its last fetch.
+    func syncTasks(account: String) async throws {
+        let lists = try await pages(GoogleTasksAPI.ListsPage.self, for: account) {
+            GoogleTasksAPI.listsRequest(pageToken: $0)
+        }.flatMap { $0.lists(account: account) }
+        try cache.replaceTaskLists(lists, account: account)
+        for var list in try cache.taskLists() where list.account == account {
+            let started = now()
+            // a minute's overlap so a change saved while the last fetch ran is not missed
+            let since = list.syncedAt?.addingTimeInterval(-60)
+            let items = try await pages(GoogleTasksAPI.TasksPage.self, for: account) {
+                GoogleTasksAPI.tasksRequest(listId: list.id, updatedMin: since, pageToken: $0)
+            }.flatMap { $0.items ?? [] }
+            if !items.isEmpty {
+                try cache.applyTaskChanges(account: account, listId: list.id,
+                                           upserts: items.filter { $0.deleted != true }.map { $0.task(account: account, listId: list.id) },
+                                           deletedIds: Set(items.filter { $0.deleted == true }.map(\.id)))
+                wrote = true
+            }
+            list.syncedAt = started
+            try cache.saveTaskList(list)
         }
     }
 

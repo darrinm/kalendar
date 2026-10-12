@@ -23,6 +23,9 @@ struct AgendaList: View {
                             ForEach(section.allDay, id: \.key) { event in
                                 AllDayPill(event: event, color: model.color(for: event))
                             }
+                            ForEach(section.tasks, id: \.key) { task in
+                                TaskRow(task: task, actions: actions)
+                            }
                             ForEach(section.timed, id: \.key) { event in
                                 EventRow(event: event, model: model, now: context.date,
                                          isSelected: model.selectedEvent == event.key,
@@ -200,7 +203,7 @@ private struct EventContextMenu: View {
         Divider()
         Button("Copy") { actions.copy(event) }
         Button("Duplicate") { actions.writer.duplicate(event) }
-        Button("Duplicate as Task") {}.disabled(true)
+        Button("Duplicate as Task") { actions.duplicateAsTask(event) }
         Button("Delete") { actions.delete(event) }
     }
 }

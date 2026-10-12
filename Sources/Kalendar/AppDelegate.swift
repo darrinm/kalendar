@@ -10,7 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var writer: EventWriter!
     private var statusItem: StatusItemController!
     private var popover: PopoverController!
-    private lazy var settings = SettingsWindowController(accounts: accounts, cache: cache, engine: engine, signIn: signIn)
+    private var alerts: AlertScheduler!
+    private lazy var settings = SettingsWindowController(accounts: accounts, cache: cache, engine: engine, alerts: alerts,
+                                                         signIn: signIn)
     private lazy var googleSignIn = GoogleSignIn(accounts: accounts)
     private var syncTimer: Timer?
     private let network = NWPathMonitor()
@@ -23,6 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.beforeSync = { [weak self] in await self?.writer.flush() }
         accounts.onSignedOut = { [weak self] email in self?.engine.removeAccount(email) }
         let agenda = AgendaModel(cache: cache, engine: engine)
+        alerts = AlertScheduler(cache: cache)
+        engine.onChange = { [weak self] in
+            agenda.cacheChanged()
+            self?.alerts.setNeedsReschedule()
+        }
         let model = PopoverModel(accounts: accounts, agenda: agenda, writer: writer, signIn: signIn,
                                  showSettings: { [weak self] in self?.showSettings() },
                                  refresh: { [weak self] in
@@ -30,6 +37,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                      self?.sync()
                                  })
         popover = PopoverController(model: model)
+        alerts.openEvent = { [weak self] event in
+            guard let self else { return }
+            if !popover.isShown { togglePopover() }
+            agenda.select(event.start)
+            model.openEvent(event, anchor: nil)
+        }
+        if !accounts.accounts.isEmpty { alerts.requestPermission() }
+        alerts.setNeedsReschedule()
         popover.onOpen = { [weak self] in self?.syncIfNeeded(maxAge: 30) }
         statusItem = StatusItemController(
             onToggle: { [weak self] in self?.togglePopover() },
@@ -100,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.close()
         Task {
             await googleSignIn.run(loginHint: email)
+            if !accounts.accounts.isEmpty { alerts.requestPermission() }
             sync()
         }
     }

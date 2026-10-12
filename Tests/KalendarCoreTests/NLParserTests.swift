@@ -107,6 +107,8 @@ final class NLParserTests: XCTestCase {
         XCTAssertTrue(task.hasDate)
         XCTAssertEqual(task.title, "buy milk")
         XCTAssertFalse(p.parse("ddd").hasDate)
+        XCTAssertFalse(task.hasTime)
+        XCTAssertTrue(p.parse("todo call Bob tomorrow 3pm").hasTime, "the task form says Google keeps the date only")
     }
 
     /// Double-clicking a day pre-dates an entry that names no date (§4.2).

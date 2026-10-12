@@ -8,20 +8,23 @@ final class SettingsWindowController {
     private let accounts: AccountStore
     private let cache: CalendarCache
     private let engine: SyncEngine
+    private let alerts: AlertScheduler
     private let signIn: (String?) -> Void
     private var window: NSWindow?
 
-    init(accounts: AccountStore, cache: CalendarCache, engine: SyncEngine, signIn: @escaping (String?) -> Void) {
+    init(accounts: AccountStore, cache: CalendarCache, engine: SyncEngine, alerts: AlertScheduler,
+         signIn: @escaping (String?) -> Void) {
         self.accounts = accounts
         self.cache = cache
         self.engine = engine
+        self.alerts = alerts
         self.signIn = signIn
     }
 
     func show() {
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView(accounts: accounts, cache: cache,
-                                                                     engine: engine, signIn: signIn))
+                                                                     engine: engine, alerts: alerts, signIn: signIn))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Kalendar Settings"
             window.styleMask = [.titled, .closable]
@@ -38,11 +41,12 @@ struct SettingsView: View {
     let accounts: AccountStore
     let cache: CalendarCache
     let engine: SyncEngine
+    let alerts: AlertScheduler
     let signIn: (String?) -> Void
 
     var body: some View {
         TabView {
-            GeneralSettings()
+            GeneralSettings(alerts: alerts)
                 .tabItem { Label("General", systemImage: "gearshape") }
             AccountsSettings(accounts: accounts, cache: cache, engine: engine, signIn: signIn)
                 .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
@@ -59,6 +63,7 @@ struct SettingsView: View {
 }
 
 private struct GeneralSettings: View {
+    let alerts: AlertScheduler
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var automaticUpdates = UpdaterController.shared.automaticallyChecks
     @AppStorage("showAlerts") private var showAlerts = true
@@ -70,12 +75,27 @@ private struct GeneralSettings: View {
                 get: { launchAtLogin },
                 set: { LaunchAtLogin.set($0); launchAtLogin = LaunchAtLogin.isEnabled }))
             Toggle("Show alerts", isOn: $showAlerts)
+            if showAlerts && !alerts.allowedBySystem {
+                HStack {
+                    Text("Alerts are off in System Settings")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Open System Settings") {
+                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier ?? "")")!)
+                    }
+                }
+            }
             Toggle("Check for updates automatically", isOn: Binding(
                 get: { automaticUpdates },
                 set: { UpdaterController.shared.automaticallyChecks = $0; automaticUpdates = $0 }))
                 .disabled(!UpdaterController.shared.isAvailable)
         }
         .formStyle(.grouped)
+        .task { await alerts.refreshPermission() }
+        // back from System Settings
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await alerts.refreshPermission() }
+        }
     }
 }
 

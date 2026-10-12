@@ -99,6 +99,28 @@ public final class CalendarCache: @unchecked Sendable {
         m.registerMigration("v3-replaces") { db in
             try db.alter(table: "pendingWrite") { t in t.add(column: "replaces", .text) }
         }
+        m.registerMigration("v5-tasks") { db in
+            try db.create(table: "taskList") { t in
+                t.column("account", .text).notNull()
+                t.column("id", .text).notNull()
+                t.column("title", .text).notNull()
+                t.column("syncedAt", .datetime)
+                t.primaryKey(["account", "id"])
+            }
+            try db.create(table: "task") { t in
+                t.column("account", .text).notNull()
+                t.column("listId", .text).notNull()
+                t.column("id", .text).notNull()
+                t.column("title", .text).notNull()
+                t.column("notes", .text)
+                t.column("completed", .boolean).notNull()
+                t.column("due", .datetime)
+                t.column("parent", .text)
+                t.column("position", .text).notNull()
+                t.primaryKey(["account", "listId", "id"])
+            }
+            try db.create(index: "task_due", on: "task", columns: ["due"])
+        }
         m.registerMigration("v4-contacts") { db in
             try db.create(table: "contact") { t in
                 t.column("account", .text).notNull()
@@ -344,6 +366,69 @@ public final class CalendarCache: @unchecked Sendable {
         }
     }
 
+    // MARK: Tasks (§10)
+
+    public func taskLists() throws -> [TaskList] {
+        try db.read { try TaskList.order(Column("account"), Column("title")).fetchAll($0) }
+    }
+
+    /// Replaces the account's lists, keeping each surviving list's sync time; a list gone from
+    /// Google goes with its tasks.
+    public func replaceTaskLists(_ lists: [TaskList], account: String) throws {
+        try db.write { db in
+            let existing = Dictionary(uniqueKeysWithValues:
+                try TaskList.filter(Column("account") == account).fetchAll(db).map { ($0.id, $0) })
+            let ids = Set(lists.map(\.id))
+            for gone in existing.keys where !ids.contains(gone) {
+                try TaskItem.filter(Column("account") == account && Column("listId") == gone).deleteAll(db)
+                _ = try TaskList.deleteOne(db, key: ["account": account, "id": gone])
+            }
+            for var l in lists {
+                l.syncedAt = existing[l.id]?.syncedAt
+                try l.save(db)
+            }
+        }
+    }
+
+    public func saveTaskList(_ list: TaskList) throws {
+        try db.write { try list.save($0) }
+    }
+
+    /// Changes from Google: upserts, and deletions by id.
+    public func applyTaskChanges(account: String, listId: String, upserts: [TaskItem], deletedIds: Set<String>) throws {
+        try db.write { db in
+            if !deletedIds.isEmpty {
+                try TaskItem.filter(Column("account") == account && Column("listId") == listId
+                                    && deletedIds.contains(Column("id"))).deleteAll(db)
+            }
+            for t in upserts { try t.save(db) }
+        }
+    }
+
+    public func task(account: String, listId: String, id: String) throws -> TaskItem? {
+        try db.read { try TaskItem.fetchOne($0, key: ["account": account, "listId": listId, "id": id]) }
+    }
+
+    public func upsertTask(_ task: TaskItem) throws { try db.write { try task.save($0) } }
+
+    public func deleteTask(account: String, listId: String, id: String) throws {
+        try db.write { _ = try TaskItem.deleteOne($0, key: ["account": account, "listId": listId, "id": id]) }
+    }
+
+    /// Every task, for the Tasks view (§10).
+    public func allTasks() throws -> [TaskItem] {
+        try db.read { try TaskItem.fetchAll($0) }
+    }
+
+    /// Tasks due in [from, to), and incomplete ones due before `from` (shown as overdue today, §4.3).
+    public func tasks(dueFrom from: Date, to: Date, overdueBefore today: Date) throws -> [TaskItem] {
+        try db.read { db in
+            try TaskItem.filter(Column("due") != nil && ((Column("due") >= from && Column("due") < to)
+                                || (Column("due") < today && Column("completed") == false)))
+                .order(Column("due")).fetchAll(db)
+        }
+    }
+
     // MARK: Write queue (§18.3)
 
     public func enqueue(_ write: PendingWrite) throws {
@@ -379,6 +464,17 @@ public final class CalendarCache: @unchecked Sendable {
         }
     }
 
+    /// An insert landed: writes queued against its placeholder id now go to Google's id.
+    public func retargetQueued(from placeholder: String, to id: String) throws {
+        try db.write { db in
+            for var w in try PendingWrite.filter(Column("eventId") == placeholder).fetchAll(db) {
+                w.eventId = id
+                w.path = w.path.replacingOccurrences(of: placeholder, with: id)
+                try w.update(db)
+            }
+        }
+    }
+
     public func pendingWriteCount() throws -> Int {
         try db.read { try PendingWrite.fetchCount($0) }
     }
@@ -391,6 +487,8 @@ public final class CalendarCache: @unchecked Sendable {
             try EventColor.filter(Column("account") == account).deleteAll(db)
             try PendingWrite.filter(Column("account") == account).deleteAll(db)
             try Contact.filter(Column("account") == account).deleteAll(db)
+            try TaskItem.filter(Column("account") == account).deleteAll(db)
+            try TaskList.filter(Column("account") == account).deleteAll(db)
         }
     }
 }

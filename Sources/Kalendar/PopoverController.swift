@@ -28,8 +28,8 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         popover.contentSize = Self.size
         popover.delegate = self
         model.close = { [weak self] in self?.close() }
-        model.showChild = { [weak self] view, content, width, edge, editor in
-            self?.showChild(relativeTo: view, content: content, width: width, edge: edge, editor: editor) ?? false
+        model.showChild = { [weak self] view, content, width, edge, shouldClose in
+            self?.showChild(relativeTo: view, content: content, width: width, edge: edge, shouldClose: shouldClose) ?? false
         }
         model.contentView = { [weak self] in self?.popover.contentViewController?.view }
         popover.contentViewController = NSHostingController(rootView: PopoverRoot(model: model))
@@ -59,27 +59,27 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         popover.performClose(nil)
     }
 
-    /// The open child popover's editor, if it is an event's detail popover.
-    private var editor: EventEditorModel?
+    /// The open child popover's save-on-close, if it is an event's or a task's detail popover.
+    private var shouldClose: (() -> Bool)?
 
     /// Closes the open child popover, saving an event's edits first. False when the user cancelled
     /// the recurring-event question (§8.1), so everything stays open.
     private func closeChild() -> Bool {
-        if let editor, !editor.shouldClose() { return false }
+        if let shouldClose, !shouldClose() { return false }
         dismissChild()
         return true
     }
 
     /// Closes the child popover without asking; any unsaved edits are dropped.
     private func dismissChild() {
-        editor = nil
+        shouldClose = nil
         detail?.close()
         detail = nil
     }
 
     @discardableResult
     private func showChild(relativeTo view: NSView, content: AnyView, width: CGFloat, edge: NSRectEdge,
-                           editor: EventEditorModel?) -> Bool {
+                           shouldClose: (() -> Bool)?) -> Bool {
         guard closeChild() else { return false }
         let child = NSPopover()
         child.behavior = .transient
@@ -89,7 +89,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         child.show(relativeTo: view.bounds, of: view, preferredEdge: edge)
         Self.paintFrame(of: child)
         detail = child
-        self.editor = editor
+        self.shouldClose = shouldClose
         return true
     }
 
@@ -110,8 +110,8 @@ final class PopoverController: NSObject, NSPopoverDelegate {
     func popoverShouldClose(_ popover: NSPopover) -> Bool {
         // the detail popover saves on close (§6) and may ask about a recurring event first
         if popover === detail {
-            guard editor?.shouldClose() ?? true else { return false }
-            editor = nil
+            guard shouldClose?() ?? true else { return false }
+            shouldClose = nil
             return true
         }
         guard popover === self.popover else { return true }
@@ -165,7 +165,7 @@ final class PopoverModel {
     var focusRequest = 0
     @ObservationIgnored var close: () -> Void = {}
     /// Shows a popover beside the Mini Window; false when the open one refused to close.
-    @ObservationIgnored var showChild: (NSView, AnyView, CGFloat, NSRectEdge, EventEditorModel?) -> Bool = { _, _, _, _, _ in false }
+    @ObservationIgnored var showChild: (NSView, AnyView, CGFloat, NSRectEdge, (() -> Bool)?) -> Bool = { _, _, _, _, _ in false }
     @ObservationIgnored var contentView: () -> NSView? = { nil }
 
     init(accounts: AccountStore, agenda: AgendaModel, writer: EventWriter, signIn: @escaping (String?) -> Void,
@@ -247,9 +247,24 @@ final class PopoverModel {
         guard let anchor = anchor ?? contentView() else { return }
         let editor = EventEditorModel(event: event, agenda: agenda, writer: writer)
         // to the left of the Mini Window (§6)
-        if showChild(anchor, AnyView(EventEditor(model: editor)), 300, .minX, editor) {
+        if showChild(anchor, AnyView(EventEditor(model: editor)), 300, .minX, editor.shouldClose) {
             agenda.selectedEvent = event.key
         }
+    }
+
+    /// A task's detail popover (§10), saved on close like an event's.
+    func openTask(_ task: TaskItem, anchor: NSView?) {
+        guard let anchor = anchor ?? contentView() else { return }
+        let editor = TaskEditorModel(task: task, agenda: agenda, writer: writer)
+        if showChild(anchor, AnyView(TaskEditor(model: editor)), 300, .minX, editor.shouldClose) {
+            agenda.selectedEvent = task.key
+        }
+    }
+
+    /// ≡ › Tasks (⌘R) and ≡ › Month (⌘3) (§10).
+    func showTasks(_ shown: Bool) {
+        agenda.showsTasks = shown
+        agenda.selectedEvent = nil
     }
 
     /// Go to Date… (§4.4): a date picker beside the Mini Window.
@@ -290,6 +305,41 @@ final class PopoverModel {
         if let location = event.location, !location.isEmpty { lines.append(location) }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+    }
+
+    /// The selected task, in the agenda or the Tasks view.
+    var selectedTask: TaskItem? {
+        guard let key = agenda.selectedEvent else { return nil }
+        return agenda.sections.lazy.flatMap(\.tasks).first { $0.key == key }
+            ?? agenda.taskRows.lazy.map(\.task).first { $0.key == key }
+    }
+
+    func deleteTask(_ task: TaskItem) {
+        writer.deleteTask(task)
+        agenda.selectedEvent = nil
+    }
+
+    /// The list a new task goes to: the account's first list, else any.
+    func defaultTaskList(account: String?) -> TaskList? {
+        agenda.taskLists.first { $0.account == account } ?? agenda.taskLists.first
+    }
+
+    /// Duplicate as Task (§7.1): due on the event's day, in the event account's first list.
+    func duplicateAsTask(_ event: EventInstance) {
+        guard let list = defaultTaskList(account: event.account) else { return }
+        writer.insertTask(title: event.summary, notes: event.notes, due: Calendar.current.startOfDay(for: event.start),
+                          account: list.account, listId: list.id)
+    }
+
+    /// Duplicate as Event (§7.3): an all-day event on the due day (today when undated), on the
+    /// primary calendar of the task's account.
+    func duplicateAsEvent(_ task: TaskItem) {
+        let writable = agenda.calendars.filter(\.isWritable)
+        guard let calendar = writable.first(where: { $0.account == task.account && $0.primary }) ?? writable.first else { return }
+        var draft = EventDraft(parsed: ParsedItem(title: task.title, allDayOn: task.due ?? agenda.today),
+                               account: calendar.account, calendarId: calendar.id)
+        draft.notes = task.notes ?? ""
+        writer.insert(draft)
     }
 
     func delete(_ event: EventInstance) {
@@ -346,12 +396,14 @@ final class PopoverModel {
         case ([.command, .shift], "t"): goToDate(); return true
         case ([.command, .shift], "r"): refresh(); return true
         case ([.command], "z"): writer.undoDelete(); return true
+        case ([.command], "r"): showTasks(true); return true
+        case ([.command], "3"): showTasks(false); return true
         default: break
         }
         // ⌫ / ⌘⌫ delete the selected event (§4.3)
         if input.isEmpty, !agenda.searchMode, event.keyCode == 51, flags.isEmpty || flags == [.command],
-           let selected = selectedEvent {
-            delete(selected)
+           selectedEvent != nil || selectedTask != nil {
+            if let event = selectedEvent { delete(event) } else if let task = selectedTask { deleteTask(task) }
             return true
         }
         guard input.isEmpty, !agenda.searchMode else { return false }

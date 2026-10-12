@@ -9,15 +9,25 @@ import SwiftUI
 struct DaySection: Identifiable, Equatable {
     var day: Date
     var allDay: [EventInstance]
+    /// Tasks due this day, pinned with the all-day items; today's also holds overdue ones (§4.3, §10).
+    var tasks: [TaskItem] = []
     var timed: [EventInstance]
     var id: Date { day }
-    var isEmpty: Bool { allDay.isEmpty && timed.isEmpty }
+    var isEmpty: Bool { allDay.isEmpty && tasks.isEmpty && timed.isEmpty }
+}
+
+/// The Tasks view's sort (§10).
+enum TaskSort: String, CaseIterable {
+    case dueDate = "Due Date"
+    case myOrder = "My Order"
 }
 
 /// What a grid cell shows under the day number (§4.2).
 struct DayMarks: Equatable {
     var colors: [Color] = []
     var declined = false
+    /// Incomplete tasks due this day: a ✓ under the dots (§4.2).
+    var tasks = false
 }
 
 @MainActor
@@ -41,7 +51,25 @@ final class AgendaModel {
     private(set) var calendars: [CalendarInfo] = []
     /// Invitations awaiting a reply (§6.2): the badge count and the Notifications popover.
     private(set) var invitations: [EventInstance] = []
+    /// The selected row's key: an event's or a task's.
     var selectedEvent: String?
+    private(set) var taskLists: [TaskList] = []
+    /// The Tasks view (§10) replaces the grid and the agenda.
+    var showsTasks = false { didSet { if showsTasks { reloadTasks() } } }
+    var taskSort = TaskSort(rawValue: UserDefaults.standard.string(forKey: "taskSort") ?? "") ?? .dueDate {
+        didSet {
+            UserDefaults.standard.set(taskSort.rawValue, forKey: "taskSort")
+            reloadTasks()
+        }
+    }
+    var showCompletedTasks = UserDefaults.standard.bool(forKey: "showCompletedTasks") {
+        didSet {
+            UserDefaults.standard.set(showCompletedTasks, forKey: "showCompletedTasks")
+            reloadTasks()
+        }
+    }
+    /// The Tasks view's rows, in order; `depth` 1 for a subtask.
+    private(set) var taskRows: [(task: TaskItem, depth: Int)] = []
 
     var searchMode = false
     var query = "" { didSet { if searchMode { scheduleSearch() } } }
@@ -71,10 +99,11 @@ final class AgendaModel {
         listEnd = today
         startList(at: today)
         reloadAll()
-        engine.onChange = { [weak self] in
-            guard let self else { return }
-            if isVisible { reloadAll() } else { stale = true }
-        }
+    }
+
+    /// The cache changed (sync, write, sign-out).
+    func cacheChanged() {
+        if isVisible { reloadAll() } else { stale = true }
     }
 
     // MARK: Navigation
@@ -139,10 +168,12 @@ final class AgendaModel {
             calendarsByKey = Dictionary(uniqueKeysWithValues: calendars.map { ($0.key, $0) })
             eventColors = try cache.eventColors()
             invitations = try cache.pendingInvitations(now: Date())
+            taskLists = try cache.taskLists()
         } catch {
             Log.shell.error("cache read failed: \(error.localizedDescription)")
         }
         reloadEvents()
+        if showsTasks { reloadTasks() }
         if searchMode { scheduleSearch(delay: 0) }
     }
 
@@ -153,12 +184,40 @@ final class AgendaModel {
         let to = max(calendar.date(byAdding: .day, value: 1, to: grid.last!)!, listEnd)
         guard let events = try? cache.events(from: from, to: to) else { return }
         let byDay = bucket(events, from: from, to: to)
+        // overdue incomplete tasks show under today, not on their past due day (§4.3)
+        let tasks = (try? cache.tasks(dueFrom: from, to: to, overdueBefore: today)) ?? []
+        let tasksByDay = Dictionary(grouping: tasks) { t in
+            !t.completed && t.due! < today ? today : t.due!
+        }
         marks = Dictionary(uniqueKeysWithValues: grid.map { day in
             let dayEvents = byDay[day] ?? []
             return (day, DayMarks(colors: dayEvents.filter { !$0.isDeclined }.map(color(for:)),
-                                  declined: dayEvents.contains(where: \.isDeclined)))
+                                  declined: dayEvents.contains(where: \.isDeclined),
+                                  tasks: tasksByDay[day]?.contains { !$0.completed } ?? false))
         })
-        sections = days(from: listStart, to: listEnd).map { section(for: $0, events: byDay[$0] ?? []) }
+        sections = days(from: listStart, to: listEnd).map { day in
+            var s = section(for: day, events: byDay[day] ?? [])
+            s.tasks = (tasksByDay[day] ?? []).sorted { ($0.completed ? 1 : 0, $0.due!, $0.title) < ($1.completed ? 1 : 0, $1.due!, $1.title) }
+            return s
+        }
+    }
+
+    /// The Tasks view's rows (§10): every list merged, subtasks under their parent.
+    private func reloadTasks() {
+        let all = ((try? cache.allTasks()) ?? []).filter { showCompletedTasks || !$0.completed }
+        let keys = Set(all.map(\.key))
+        // a subtask whose parent is hidden (completed, say) shows as a top-level task
+        let parentKey = { (t: TaskItem) in t.parent.map { "\(t.listKey)|\($0)" }.flatMap { keys.contains($0) ? $0 : nil } }
+        let children = Dictionary(grouping: all.filter { parentKey($0) != nil }) { parentKey($0)! }
+        let order: (TaskItem, TaskItem) -> Bool = switch taskSort {
+        // undated last; then title, so the order is stable
+        case .dueDate: { ($0.due ?? .distantFuture, $0.title) < ($1.due ?? .distantFuture, $1.title) }
+        case .myOrder: { ($0.listKey, $0.position) < ($1.listKey, $1.position) }
+        }
+        let roots = all.filter { parentKey($0) == nil }
+        taskRows = roots.sorted(by: order).flatMap { root in
+            [(root, 0)] + (children[root.key] ?? []).sorted { $0.position < $1.position }.map { ($0, 1) }
+        }
     }
 
     /// Search runs 150 ms after the last keystroke, so typing doesn't query the cache per letter.
@@ -226,6 +285,8 @@ final class AgendaModel {
     }
 
     func calendar(forKey key: String) -> CalendarInfo? { calendarsByKey[key] }
+
+    func taskList(forKey key: String) -> TaskList? { taskLists.first { $0.key == key } }
 
     func calendarName(for event: EventInstance) -> String {
         calendarsByKey[event.calendarKey]?.summary ?? event.calendarId

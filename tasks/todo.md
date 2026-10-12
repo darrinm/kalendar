@@ -1,25 +1,28 @@
-# Milestone 4 — Natural-language entry and suggestions
+# Milestone 5 — Google Tasks and alerts
 
-Spec: `docs/SPEC.md` §5 (events; the task form is milestone 5), §8.3, §18.4. Earlier milestones are in git history.
+Spec: `docs/SPEC.md` §5.1 (task form), §7.3, §10, §18.2 (Tasks), §19. Earlier milestones are in git history.
 
-## Core (KalendarCore)
-- [x] `NLParser`: tokenizer + rules for §5.3 — dates, date ranges, times, time ranges, durations, all day, recurrence (every …, weekdays, other / N, until, for N times), alerts, `/calendar`, `with`, `at`, quoted literals, task prefix; title from what's left; a token map for the UI
-- [x] Suggestion trigger for the token being typed: `/…` calendars, `with …` contacts, `at …` places
-- [x] Parse → `EventDraft`; live re-parse keeps fields the user edited by hand
-- [x] Contacts: People API connections, other contacts, Workspace directory → cache; plus attendees from cached events
-- [x] `EventWriter.insert`: optimistic placeholder replaced by Google's copy
-- [x] Tests: §5.2 table + a corpus of example sentences in `Tests/KalendarCoreTests/Fixtures`
+## Tasks
+- [x] Cache v5: task lists and tasks; per-list sync time
+- [x] Tasks API: tasklists.list, tasks.list (`updatedMin`, `showCompleted`, `showHidden`, `showDeleted`), insert, patch, delete, move; synced with the calendars
+- [x] Task writes through the existing write queue (optimistic, offline, rejected → refetch)
+- [x] Agenda: tasks on their due day with the all-day items (circle checkbox), overdue incomplete tasks in today with the due date in `wait`, ✓ under grid days with tasks
+- [x] Tasks view (⌘R, ≡ › Tasks): all lists merged, Due Date / My Order, subtasks indented, complete / uncomplete, completed shown
+- [x] Task form: event/task toggle, `todo`/`task`/`reminder`/`√` prefix, due (date only, "Google Tasks stores dates only" when a time was typed), list picker, notes, Add Task
+- [x] Task context menu (§7.3): Complete/Uncomplete, Move to List ›, Duplicate as Event, Delete; event menu's Duplicate as Task
+- [x] Tests
 
-## UI
-- [x] New-event form under the input, live on every keystroke (collapsed / expanded, same fields as the detail popover), Add Event
-- [x] Suggestion list under the input: ↑/↓, Enter/Tab accept, Esc dismiss; calendars, contacts (initials, name, email), places (MKLocalSearchCompleter + recent locations)
-- [x] × cancels; discard dialog when the form was edited by hand (§8.3)
-- [x] Commit: insert, UI sound, clear, back to today after ~2 s; inline error
-- [x] Double-click a day: new entry pre-dated to that day
-- [ ] Verify by hand: Enter / Tab / ↑↓ in suggestions, Add Event, discard dialog, double-click a day; one real create + edit + delete + undo on the "test" calendar (the milestone 3 check)
+## Alerts (§19)
+- [x] `AlertScheduler`: effective popup reminders for cached events in the next 24 h (calendar defaults when `useDefault`), not declined, ≤ 64 pending, identifier `<calendarId>|<eventId>|<minutes>`; reschedule after sync, at midnight, on wake
+- [x] Content: title, "3:00 – 3:50 PM · Location"; actions Join (with a video link) and Snooze 5 Minutes; click opens the event's detail popover
+- [x] Permission after sign-in; Settings › General "Show alerts" removes pending alerts; "Alerts are off in System Settings" with a button
+- [x] On wake: delivered alerts for ended events removed
+- [x] Tests for alert selection and identifiers
+- [x] Verify: build, tests, app checks
 
 ## Review
-
-- `swift build -Xswiftc -warnings-as-errors` and `swift test` (72 tests) pass. New tests: the 28-sentence corpus (§5.2 table plus Kalendar's own examples), live title while typing, suggestion triggers, contact matching, `/calendar` and task prefixes, double-click default day, clock readings; People API parsing, contact ranking with event attendees, unique-name matching; insert with a placeholder replaced by Google's copy; the live form keeping hand edits.
-- In the running app: contacts synced (1,263 + 379); typing "Coffee tomorrow 3pm at Ritu" showed the form with Apple Maps place suggestions.
-- Not verified by hand: keyboard handling in the suggestion list, Add Event, the discard dialog, double-click, and a real create/edit/delete/undo. The automated driver can only reach Kalendar's popover while Kalendar is the active app, and Zoom was frontmost; relaunching to activate Kalendar would keep taking focus from it.
+- Tasks: cache v5, sync per list with `updatedMin` (a Tasks API failure is logged and does not fail calendar sync), writes through the event queue (absolute Tasks URLs; `local-` placeholders retargeted when the insert lands). Live: 4 lists, 277 tasks.
+- Agenda task rows, overdue in today in `wait`, ✓ under grid days; Tasks view (⌘R / ⌘3) with Due Date / My Order, Show Completed, subtasks indented; task detail popover saves on close; task form with ▣ | ✓ and "Google Tasks stores dates only".
+- Alerts: `AlertPlanner` (core, tested) + `AlertScheduler`. Live: permission authorized, 5 alerts planned and 5 pending.
+- Tests: 86 passing.
+- Not checked by hand (UI driving would take focus): the task rows, Tasks view, task form, notification actions.

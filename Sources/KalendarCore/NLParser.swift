@@ -17,6 +17,8 @@ public struct ParsedItem: Equatable {
     public var end: Date
     /// Whether the text named a date (a task's "due" checkbox, §5.1).
     public var hasDate = false
+    /// Whether the text named a time; a task drops it (§5.1: "Google Tasks stores dates only").
+    public var hasTime = false
     public var recurrence: RecurrenceRule?
     /// Minutes before the start; empty means the calendar's defaults (or none for all-day).
     public var alerts: [Int] = []
@@ -26,6 +28,18 @@ public struct ParsedItem: Equatable {
     public var invitees: [String] = []
     /// The token being typed, when it should show a suggestion list.
     public var trigger: SuggestionTrigger?
+
+    /// An all-day item on `day`'s date.
+    public init(title: String = "", allDayOn day: Date, calendar: Calendar = .current) {
+        self.title = title
+        start = calendar.startOfDay(for: day)
+        end = calendar.date(byAdding: .day, value: 1, to: start)!
+    }
+
+    init(start: Date, end: Date) {
+        self.start = start
+        self.end = end
+    }
 }
 
 public struct SuggestionTrigger: Equatable {
@@ -467,6 +481,7 @@ public struct NLParser {
 
         var time = s.time
         if time == nil && s.evening { time = (19, 0) }
+        item.hasTime = time != nil
         if let t = time, !s.allDayWords {
             item.allDay = false
             var start = calendar.date(bySettingHour: t.h, minute: t.m, second: 0, of: day)!

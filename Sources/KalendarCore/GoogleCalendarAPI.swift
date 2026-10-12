@@ -32,9 +32,10 @@ public enum GoogleCalendarAPI {
     /// A request builder: AccountStore calls it with the account's current access token.
     public typealias Builder = (String) -> URLRequest
 
+    /// `path` is under the Calendar API base, or an absolute URL (Tasks API writes in the queue).
     static func request(_ path: String, _ query: [String: String?], method: String = "GET",
                         body: Data? = nil, accessToken: String) -> URLRequest {
-        var c = URLComponents(string: base + path)!
+        var c = URLComponents(string: path.hasPrefix("https://") ? path : base + path)!
         c.queryItems = query.sorted { $0.key < $1.key }.compactMap { k, v in v.map { URLQueryItem(name: k, value: $0) } }
         var r = URLRequest(url: c.url!)
         r.httpMethod = method
@@ -126,7 +127,7 @@ public enum GoogleCalendarAPI {
     public static func writeRequest(_ w: PendingWrite) -> Builder {
         { token in
             var query = w.query.mapValues { Optional($0) }
-            if w.method != "DELETE" { query["fields"] = eventFields }
+            if w.method != "DELETE" && !w.isTask { query["fields"] = eventFields }
             var r = request(w.path, query, method: w.method, body: w.body, accessToken: token)
             if let etag = w.ifMatch { r.setValue(etag, forHTTPHeaderField: "If-Match") }
             return r

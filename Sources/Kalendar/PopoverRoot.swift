@@ -29,7 +29,13 @@ struct PopoverRoot: View {
                     } else if let form = model.newItem.form {
                         // the new-item form, live as the input changes (§5)
                         Theme.line.frame(height: 1)
-                        EventEditor(model: form, onAdd: model.addNewItem)
+                        EventEditor(model: form, onAdd: model.addNewItem, onKind: model.newItem.setKind)
+                    } else if let taskForm = model.newItem.taskForm {
+                        Theme.line.frame(height: 1)
+                        TaskEditor(model: taskForm, onAdd: model.addNewItem, onKind: model.newItem.setKind)
+                    } else if agenda.showsTasks {
+                        WriteErrorNotice(writer: model.writer)
+                        TasksView(model: model)
                     } else {
                         MonthHeader(model: model)
                             .padding(.horizontal, 16)
@@ -237,10 +243,11 @@ private struct Toolbar: View {
     var body: some View {
         HStack {
             Menu {
-                Toggle("Month", isOn: .constant(true))
+                Toggle("Month", isOn: Binding(get: { !model.agenda.showsTasks }, set: { _ in model.showTasks(false) }))
                     .keyboardShortcut("3", modifiers: .command)
                 Divider()
-                Button("Tasks") {}.disabled(true)
+                Toggle("Tasks", isOn: Binding(get: { model.agenda.showsTasks }, set: { _ in model.showTasks(true) }))
+                    .keyboardShortcut("r", modifiers: .command)
             } label: {
                 ToolbarIcon(systemName: "line.3.horizontal")
             }
@@ -255,9 +262,11 @@ private struct Toolbar: View {
                 Button("Go to Date…") { model.goToDate() }
                     .keyboardShortcut("t", modifiers: [.command, .shift])
                 Divider()
-                Button("Delete Item") { if let event = model.selectedEvent { model.delete(event) } }
+                Button("Delete Item") {
+                    if let event = model.selectedEvent { model.delete(event) } else if let task = model.selectedTask { model.deleteTask(task) }
+                }
                     .keyboardShortcut(.delete, modifiers: .command)
-                    .disabled(model.selectedEvent == nil)
+                    .disabled(model.selectedEvent == nil && model.selectedTask == nil)
                 Divider()
                 Button("Refresh All") { model.refresh() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])

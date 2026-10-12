@@ -7,6 +7,8 @@ struct EventEditor: View {
     @Bindable var model: EventEditorModel
     /// The new-item form's Add Event button (§5.1); nil for an existing event.
     var onAdd: (() -> Void)?
+    /// The ▣ | ✓ toggle, on the new-item form only (§5.1).
+    var onKind: ((Bool) -> Void)?
 
     private var readOnly: Bool { model.isInvitation }
 
@@ -54,11 +56,14 @@ struct EventEditor: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            TextField("Title", text: $model.draft.summary, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .disabled(readOnly)
+            HStack(alignment: .top) {
+                TextField("Title", text: $model.draft.summary, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .disabled(readOnly)
+                if let onKind { KindToggle(isTask: false, set: onKind) }
+            }
             TextField("Add Location", text: $model.draft.location)
                 .textFieldStyle(.plain)
                 .foregroundStyle(Theme.muted)
@@ -187,10 +192,10 @@ struct EventEditor: View {
     }
 }
 
-private let labelWidth: CGFloat = 70
+let labelWidth: CGFloat = 70
 
 /// A right-aligned grey label and its control (§6 layout).
-private struct Row<Content: View>: View {
+struct Row<Content: View>: View {
     let label: String
     @ViewBuilder let content: Content
 

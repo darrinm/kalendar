@@ -78,6 +78,9 @@ private struct DayCell: View {
                 if marks.declined {
                     Circle().fill(Theme.bad).frame(width: 4, height: 4)
                 }
+                if marks.tasks {
+                    Image(systemName: "checkmark").font(.system(size: 6, weight: .bold)).foregroundStyle(Theme.muted)
+                }
             }
             .frame(height: 4)
         }
@@ -87,7 +90,7 @@ private struct DayCell: View {
         .gesture(TapGesture(count: 2).onEnded { onDoubleClick(day) })
         .simultaneousGesture(TapGesture().onEnded { model.select(day) })
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel(isToday: isToday, count: marks.colors.count))
+        .accessibilityLabel(accessibilityLabel(isToday: isToday, count: marks.colors.count) + (marks.tasks ? ", tasks due" : ""))
         .accessibilityAddTraits(.isButton)
     }
 

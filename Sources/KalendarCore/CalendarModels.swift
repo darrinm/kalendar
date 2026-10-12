@@ -19,6 +19,8 @@ public struct CalendarInfo: Codable, Equatable, Hashable, FetchableRecord, Persi
     /// The instance window the cache holds for this calendar.
     public var windowStart: Date?
     public var windowEnd: Date?
+    /// Popup reminders (minutes before) for events that use the calendar's defaults.
+    public var defaultReminders: [Int] = []
 
     public var key: String { "\(account)|\(id)" }
     /// For a calendar or event Google gave no color.
@@ -59,6 +61,13 @@ public struct EventInstance: Codable, Equatable, Hashable, FetchableRecord, Pers
     public var organizerSelf: Bool
     public var attendees: [Attendee]
     public var htmlLink: String?
+    /// Google's version tag; writes send it as `If-Match` (§18.3).
+    public var etag: String?
+    /// default, public, private, confidential
+    public var visibility: String?
+    public var reminders: Reminders = Reminders()
+    /// The time zone of a timed event's start, an IANA identifier.
+    public var timeZone: String?
 
     public var key: String { "\(account)|\(calendarId)|\(id)" }
     /// The `CalendarInfo.key` of the event's calendar.
@@ -68,10 +77,64 @@ public struct EventInstance: Codable, Equatable, Hashable, FetchableRecord, Pers
     public var isTentative: Bool { selfResponse == "needsAction" || selfResponse == "tentative" }
 }
 
+/// An event's popup alerts (§6.1): the calendar's defaults, or its own list of minutes-before.
+public struct Reminders: Codable, Equatable, Hashable {
+    public var useDefault: Bool
+    public var minutes: [Int]
+
+    public init(useDefault: Bool = true, minutes: [Int] = []) {
+        self.useDefault = useDefault
+        self.minutes = minutes
+    }
+}
+
 /// Google's event color palette (`colors.get`), per account.
 public struct EventColor: Codable, Equatable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "eventColor"
     public var account: String
     public var colorId: String
     public var background: String
+}
+
+/// A write waiting to reach Google (§18.3). Applied to the cache when queued; sent in order.
+public struct PendingWrite: Codable, Equatable, FetchableRecord, MutablePersistableRecord {
+    public static let databaseTableName = "pendingWrite"
+
+    public var id: Int64?
+    public var account: String
+    public var calendarId: String
+    /// The event the write is about, for refetching it when the write fails.
+    public var eventId: String
+    public var method: String
+    /// Under the Calendar API base, e.g. "/calendars/primary/events/abc".
+    public var path: String
+    public var query: [String: String]
+    public var body: Data?
+    public var ifMatch: String?
+    /// A recurring series to refetch once the write lands (edits and deletes of a whole series).
+    public var refreshSeries: String?
+    /// Sent as an `events.insert` when the write fails (undo of a delete, §8.2).
+    public var fallbackBody: Data?
+    /// The event's title, for error messages.
+    public var summary: String
+    public var createdAt: Date
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+
+    public init(account: String, calendarId: String, eventId: String, method: String, path: String,
+                query: [String: String] = [:], body: [String: Any]? = nil, ifMatch: String? = nil,
+                refreshSeries: String? = nil, fallbackBody: [String: Any]? = nil, summary: String, createdAt: Date) {
+        self.account = account
+        self.calendarId = calendarId
+        self.eventId = eventId
+        self.method = method
+        self.path = path
+        self.query = query
+        self.body = body.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+        self.ifMatch = ifMatch
+        self.refreshSeries = refreshSeries
+        self.fallbackBody = fallbackBody.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+        self.summary = summary
+        self.createdAt = createdAt
+    }
 }

@@ -1,0 +1,185 @@
+// The repeat and repeat-end fields (§6.1): an RFC 5545 RRULE as the editor sees it.
+//
+// Kalendar edits frequency, interval, weekdays and the end. Any other RRULE part it reads
+// (BYMONTHDAY, BYSETPOS, ordinal BYDAY like "1MO", …) is kept and written back unchanged, so
+// editing an event made elsewhere never drops part of its rule.
+import Foundation
+
+public struct RecurrenceRule: Equatable, Hashable {
+    public enum Frequency: String, CaseIterable, Hashable {
+        case daily = "DAILY", weekly = "WEEKLY", monthly = "MONTHLY", yearly = "YEARLY"
+
+        var unit: String {
+            switch self {
+            case .daily: "day"
+            case .weekly: "week"
+            case .monthly: "month"
+            case .yearly: "year"
+            }
+        }
+    }
+
+    public enum End: Equatable, Hashable {
+        case never
+        /// The last day on which an occurrence may start (inclusive).
+        case until(Date)
+        case count(Int)
+    }
+
+    public var frequency: Frequency
+    public var interval: Int
+    /// Weekdays for a weekly rule, 1 = Sunday … 7 = Saturday. Empty means "the start's weekday".
+    public var weekdays: Set<Int>
+    public var end: End
+    /// RRULE parts Kalendar does not edit, in their original order.
+    var otherParts: [(String, String)]
+
+    public init(frequency: Frequency, interval: Int = 1, weekdays: Set<Int> = [], end: End = .never) {
+        self.frequency = frequency
+        self.interval = max(1, interval)
+        self.weekdays = weekdays
+        self.end = end
+        otherParts = []
+    }
+
+    public static func == (a: Self, b: Self) -> Bool {
+        a.frequency == b.frequency && a.interval == b.interval && a.weekdays == b.weekdays && a.end == b.end
+            && a.otherParts.map { "\($0.0)=\($0.1)" } == b.otherParts.map { "\($0.0)=\($0.1)" }
+    }
+
+    public func hash(into hasher: inout Hasher) { hasher.combine(rrule()) }
+
+    private static let dayCodes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+
+    // MARK: Parsing and writing
+
+    /// The first RRULE in a Google `recurrence` array.
+    public init?(recurrence: [String]) {
+        guard let line = recurrence.first(where: { $0.hasPrefix("RRULE:") }) else { return nil }
+        self.init(rrule: line)
+    }
+
+    /// "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;UNTIL=20261231T075959Z"
+    public init?(rrule: String) {
+        let body = rrule.hasPrefix("RRULE:") ? String(rrule.dropFirst(6)) : rrule
+        var frequency: Frequency?
+        var interval = 1
+        var weekdays = Set<Int>()
+        var end = End.never
+        var other: [(String, String)] = []
+        for part in body.split(separator: ";") {
+            let kv = part.split(separator: "=", maxSplits: 1).map(String.init)
+            guard kv.count == 2 else { continue }
+            switch kv[0] {
+            case "FREQ": frequency = Frequency(rawValue: kv[1])
+            case "INTERVAL": interval = Int(kv[1]) ?? 1
+            case "COUNT": end = Int(kv[1]).map(End.count) ?? .never
+            case "UNTIL": end = Self.parseUntil(kv[1]).map(End.until) ?? .never
+            case "BYDAY":
+                let days = kv[1].split(separator: ",").map(String.init)
+                // plain weekday codes only; "1MO" style ordinals stay as they were
+                if days.allSatisfy({ Self.dayCodes.contains($0) }) {
+                    weekdays = Set(days.compactMap { Self.dayCodes.firstIndex(of: $0).map { $0 + 1 } })
+                } else {
+                    other.append((kv[0], kv[1]))
+                }
+            default: other.append((kv[0], kv[1]))
+            }
+        }
+        guard let frequency else { return nil }
+        self.init(frequency: frequency, interval: interval, weekdays: weekdays, end: end)
+        otherParts = other
+    }
+
+    /// The RRULE line. UNTIL is written as the end of that day in `calendar`'s time zone, in UTC,
+    /// which is what RFC 5545 requires for a rule on a timed event.
+    public func rrule(calendar: Calendar = .current) -> String {
+        var parts = ["FREQ=\(frequency.rawValue)"]
+        if interval > 1 { parts.append("INTERVAL=\(interval)") }
+        if !weekdays.isEmpty { parts.append("BYDAY=" + weekdays.sorted().map { Self.dayCodes[$0 - 1] }.joined(separator: ",")) }
+        parts += otherParts.map { "\($0.0)=\($0.1)" }
+        switch end {
+        case .never: break
+        case .count(let n): parts.append("COUNT=\(n)")
+        case .until(let day):
+            let last = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: calendar.startOfDay(for: day))!
+            parts.append("UNTIL=" + Self.untilFormatter.string(from: last))
+        }
+        return "RRULE:" + parts.joined(separator: ";")
+    }
+
+    /// `recurrence` with the RRULE replaced (or removed when `rule` is nil); EXDATE/RDATE lines stay.
+    public static func replacing(_ rule: RecurrenceRule?, in recurrence: [String]) -> [String] {
+        let rest = recurrence.filter { !$0.hasPrefix("RRULE:") }
+        return rule.map { [$0.rrule()] + rest } ?? rest
+    }
+
+    private static let untilFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        return f
+    }()
+
+    private static func parseUntil(_ value: String) -> Date? {
+        if let d = untilFormatter.date(from: value) { return d }
+        // a date-only UNTIL (all-day events) is a calendar day
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd"
+        return f.date(from: value)
+    }
+
+    // MARK: Presets and summary
+
+    public enum Preset: String, CaseIterable {
+        case daily = "Every Day", weekly = "Every Week", monthly = "Every Month", yearly = "Every Year"
+
+        public var rule: RecurrenceRule {
+            switch self {
+            case .daily: RecurrenceRule(frequency: .daily)
+            case .weekly: RecurrenceRule(frequency: .weekly)
+            case .monthly: RecurrenceRule(frequency: .monthly)
+            case .yearly: RecurrenceRule(frequency: .yearly)
+            }
+        }
+    }
+
+    /// The menu item this rule is, ignoring its end; nil when only "Custom…" describes it.
+    public var preset: Preset? {
+        guard interval == 1, weekdays.isEmpty, otherParts.isEmpty else { return nil }
+        return Preset.allCases.first { $0.rule.frequency == frequency }
+    }
+
+    /// "Every Week", "Every 2 weeks on Monday and Wednesday",
+    /// "Every week on Monday, Tuesday, Wednesday, Thursday and Friday" (§5.2).
+    public func summary(calendar: Calendar = .current) -> String {
+        if let preset, otherParts.isEmpty { return preset.rawValue }
+        var text = interval == 1 ? "Every \(frequency.unit)" : "Every \(interval) \(frequency.unit)s"
+        if !weekdays.isEmpty {
+            let formatter = DateFormatter()   // full names; Calendar.weekdaySymbols can be abbreviated
+            formatter.calendar = calendar
+            let names = weekdays.sorted().map { formatter.weekdaySymbols[$0 - 1] }
+            text += " on " + Self.list(names)
+        }
+        return text
+    }
+
+    /// "Never", "Until Dec 31, 2026", "After 5 times".
+    public var endSummary: String {
+        switch end {
+        case .never: "Never"
+        case .until(let day): "Until \(day.formatted(date: .abbreviated, time: .omitted))"
+        case .count(let n): n == 1 ? "After 1 time" : "After \(n) times"
+        }
+    }
+
+    static func list(_ items: [String]) -> String {
+        switch items.count {
+        case 0: ""
+        case 1: items[0]
+        default: items.dropLast().joined(separator: ", ") + " and " + items.last!
+        }
+    }
+}

@@ -26,6 +26,9 @@ public final class SyncEngine {
     /// Called on the main actor whenever the cache changed: once per account sync that wrote
     /// something, and after visibility changes and account removal.
     @ObservationIgnored public var onChange: () -> Void = {}
+    /// Runs before each sync pass; the app sends queued writes here so a sync never overwrites
+    /// an edit that hasn't reached Google yet.
+    @ObservationIgnored public var beforeSync: () async -> Void = {}
 
     @ObservationIgnored private let accounts: AccountStore
     @ObservationIgnored private let cache: CalendarCache
@@ -84,6 +87,7 @@ public final class SyncEngine {
 
     private func runAll() async {
         state = .syncing
+        await beforeSync()
         var failure: String?
         for account in accounts.accounts where !account.needsReauth {
             wrote = false
@@ -216,6 +220,14 @@ public final class SyncEngine {
             // 404 or 410 Gone on an instances request means the series was deleted
             return []
         }
+    }
+
+    /// Replaces a series' cached instances with Google's current ones (after a write to the series).
+    public func refreshSeries(_ seriesId: String, account: String, calendarId: String) async {
+        guard let calendar = try? cache.calendars(account: account).first(where: { $0.id == calendarId }),
+              let fresh = try? await instances(of: seriesId, in: calendar) else { return }
+        try? cache.applyChanges(account: account, calendarId: calendarId, upserts: [], deletedIds: [],
+                                replacedSeries: [seriesId: fresh])
     }
 
     private func parsed(_ page: GoogleCalendarAPI.EventsPage, calendar: CalendarInfo) -> [EventInstance] {

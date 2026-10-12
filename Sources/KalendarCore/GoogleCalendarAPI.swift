@@ -5,7 +5,7 @@ public enum GoogleCalendarAPI {
     static let base = "https://www.googleapis.com/calendar/v3"
 
     /// The fields Kalendar reads from an event. Asking for only these keeps pages small.
-    static let eventFields = "id,status,summary,location,description,start,end,recurringEventId,recurrence,"
+    static let eventFields = "id,etag,status,summary,location,description,start,end,recurringEventId,recurrence,visibility,reminders,"
         + "transparency,colorId,hangoutLink,conferenceData(entryPoints(entryPointType,uri)),"
         + "attendees(email,displayName,self,organizer,optional,responseStatus),organizer(email,self),htmlLink"
 
@@ -54,7 +54,7 @@ public enum GoogleCalendarAPI {
     public static func calendarListRequest(pageToken: String? = nil) -> Builder {
         { request("/users/me/calendarList", [
             "maxResults": "250", "pageToken": pageToken,
-            "fields": "nextPageToken,items(id,summary,summaryOverride,backgroundColor,accessRole,selected,primary)",
+            "fields": "nextPageToken,items(id,summary,summaryOverride,backgroundColor,accessRole,selected,primary,defaultReminders)",
         ], accessToken: $0) }
     }
 
@@ -114,6 +114,25 @@ public enum GoogleCalendarAPI {
 
     static func iso(_ date: Date) -> String { internetDate.string(from: date) }
 
+    public static func eventPath(calendarId: String, eventId: String? = nil) -> String {
+        "/calendars/\(pathSegment(calendarId))/events" + (eventId.map { "/\(pathSegment($0))" } ?? "")
+    }
+
+    public static func getEventRequest(calendarId: String, eventId: String) -> Builder {
+        { request(eventPath(calendarId: calendarId, eventId: eventId), ["fields": eventFields], accessToken: $0) }
+    }
+
+    /// A queued write as a request.
+    public static func writeRequest(_ w: PendingWrite, body: Data? = nil) -> Builder {
+        { token in
+            var query = w.query.mapValues { Optional($0) }
+            if w.method != "DELETE" { query["fields"] = eventFields }
+            var r = request(w.path, query, method: w.method, body: body ?? w.body, accessToken: token)
+            if let etag = w.ifMatch { r.setValue(etag, forHTTPHeaderField: "If-Match") }
+            return r
+        }
+    }
+
     // MARK: Responses
 
     public static func checkStatus(_ status: Int) throws {
@@ -144,6 +163,7 @@ public enum GoogleCalendarAPI {
             var accessRole: String
             var selected: Bool?
             var primary: Bool?
+            var defaultReminders: [GoogleEvent.ReminderList.Override]?
         }
         public var nextPageToken: String?
         var items: [Item]?
@@ -152,7 +172,9 @@ public enum GoogleCalendarAPI {
             (items ?? []).map {
                 CalendarInfo(account: account, id: $0.id, summary: $0.summaryOverride ?? $0.summary ?? $0.id,
                              backgroundColor: $0.backgroundColor ?? CalendarInfo.fallbackColor, accessRole: $0.accessRole,
-                             selected: $0.selected ?? false, primary: $0.primary ?? false)
+                             selected: $0.selected ?? false, primary: $0.primary ?? false,
+                             defaultReminders: ($0.defaultReminders ?? []).filter { $0.method == "popup" }
+                                 .compactMap(\.minutes).sorted())
             }
         }
     }
@@ -173,7 +195,14 @@ public enum GoogleCalendarAPI {
     }
 
     public struct GoogleEvent: Decodable {
-        struct Time: Decodable { var dateTime: String?; var date: String? }
+        struct Time: Decodable { var dateTime: String?; var date: String?; var timeZone: String? }
+        struct ReminderList: Decodable {
+            struct Override: Decodable { var method: String?; var minutes: Int? }
+            var useDefault: Bool?
+            var overrides: [Override]?
+
+            var popupMinutes: [Int] { (overrides ?? []).filter { $0.method == "popup" }.compactMap(\.minutes).sorted() }
+        }
         struct Person: Decodable {
             var email: String?
             var displayName: String?
@@ -208,6 +237,9 @@ public enum GoogleCalendarAPI {
         var attendees: [Person]?
         var organizer: Person?
         var htmlLink: String?
+        var etag: String?
+        var visibility: String?
+        var reminders: ReminderList?
 
         public var isCancelled: Bool { status == "cancelled" }
         /// A recurring series' master event.
@@ -231,7 +263,10 @@ public enum GoogleCalendarAPI {
                 start: startDate, end: endDate, allDay: allDay, transparency: transparency, colorId: colorId,
                 conferenceURL: video ?? hangoutLink ?? ConferenceDetector.url(in: [location, description]),
                 selfResponse: people.first(where: \.isSelf)?.responseStatus,
-                organizerSelf: organizer?.isSelf ?? false, attendees: people, htmlLink: htmlLink)
+                organizerSelf: organizer?.isSelf ?? false, attendees: people, htmlLink: htmlLink,
+                etag: etag, visibility: visibility,
+                reminders: Reminders(useDefault: reminders?.useDefault ?? true, minutes: reminders?.popupMinutes ?? []),
+                timeZone: start.timeZone)
         }
 
         static func parse(_ t: Time, calendar: Calendar) -> (Date, Bool)? {

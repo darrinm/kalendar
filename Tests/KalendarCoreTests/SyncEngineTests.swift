@@ -2,35 +2,6 @@
 import XCTest
 @testable import KalendarCore
 
-private final class StubVault: TokenVault {
-    func refreshToken(for email: String) throws -> String? { "rt" }
-    func setRefreshToken(_ token: String?, for email: String) {}
-}
-
-/// A fake Calendar API: one handler decides each response from the request.
-private final class FakeGoogle: @unchecked Sendable {
-    var handler: (URLRequest, [String: String]) -> (Int, String) = { _, _ in (404, "{}") }
-    var log: [String] = []
-    /// Holds PATCH requests this long, to overlap them with a sync.
-    var patchDelay: UInt64 = 0
-
-    func callAsFunction(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        let url = request.url!
-        let query = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?
-            .queryItems ?? []).map { ($0.name, $0.value ?? "") })
-        if request.httpMethod == "PATCH", patchDelay > 0 { try await Task.sleep(nanoseconds: patchDelay) }
-        let (status, body): (Int, String)
-        if url.host == "oauth2.googleapis.com" {
-            (status, body) = (200, #"{"access_token":"at","expires_in":3600}"#)
-        } else {
-            log.append("\(request.httpMethod ?? "GET") \(url.path)" + (query["syncToken"].map { " sync=\($0)" } ?? "")
-                       + (query["singleEvents"].map { " single=\($0)" } ?? ""))
-            (status, body) = handler(request, query)
-        }
-        return (Data(body.utf8), HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!)
-    }
-}
-
 @MainActor
 final class SyncEngineTests: XCTestCase {
     private let google = FakeGoogle()

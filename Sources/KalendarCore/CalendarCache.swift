@@ -68,6 +68,34 @@ public final class CalendarCache: @unchecked Sendable {
                 t.primaryKey(["account", "colorId"])
             }
         }
+        m.registerMigration("v2-editing") { db in
+            try db.alter(table: "event") { t in
+                t.add(column: "etag", .text)
+                t.add(column: "visibility", .text)
+                t.add(column: "reminders", .text).notNull().defaults(to: #"{"useDefault":true,"minutes":[]}"#)
+                t.add(column: "timeZone", .text)
+            }
+            try db.alter(table: "calendar") { t in
+                t.add(column: "defaultReminders", .text).notNull().defaults(to: "[]")
+            }
+            // the new fields arrive only with a full sync
+            try db.execute(sql: "UPDATE calendar SET syncToken = NULL")
+            try db.create(table: "pendingWrite") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("account", .text).notNull()
+                t.column("calendarId", .text).notNull()
+                t.column("eventId", .text).notNull()
+                t.column("method", .text).notNull()
+                t.column("path", .text).notNull()
+                t.column("query", .text).notNull()
+                t.column("body", .blob)
+                t.column("ifMatch", .text)
+                t.column("refreshSeries", .text)
+                t.column("fallbackBody", .blob)
+                t.column("summary", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+            }
+        }
         return m
     }
 
@@ -212,12 +240,73 @@ public final class CalendarCache: @unchecked Sendable {
         }
     }
 
+    // MARK: Edits (milestone 3)
+
+    public func event(account: String, calendarId: String, id: String) throws -> EventInstance? {
+        try db.read { try EventInstance.fetchOne($0, key: ["account": account, "calendarId": calendarId, "id": id]) }
+    }
+
+    public func upsert(_ events: [EventInstance]) throws {
+        try db.write { db in for e in events { try e.save(db) } }
+    }
+
+    /// Removes one occurrence, or with `series` every cached instance of that recurring series.
+    public func deleteEvent(account: String, calendarId: String, id: String, series: String? = nil) throws {
+        try db.write { db in
+            let rows = EventInstance.filter(Column("account") == account && Column("calendarId") == calendarId)
+            if let series {
+                try rows.filter(Column("recurringEventId") == series || Column("id") == series).deleteAll(db)
+            } else {
+                try rows.filter(Column("id") == id).deleteAll(db)
+            }
+        }
+    }
+
+    /// Invitations awaiting the user's reply (§6.2): visible calendars, today −7 days … +90 days,
+    /// not organized by the user; for a series, only its next pending occurrence.
+    public func pendingInvitations(now: Date) throws -> [EventInstance] {
+        let from = now.addingTimeInterval(-7 * 86400), to = now.addingTimeInterval(90 * 86400)
+        let rows = try db.read { db in
+            try EventInstance.fetchAll(db, sql: """
+                SELECT event.* FROM event JOIN calendar
+                  ON calendar.account = event.account AND calendar.id = event.calendarId
+                WHERE calendar.selected AND event.selfResponse = 'needsAction' AND NOT event.organizerSelf
+                  AND event.end > ? AND event.start < ?
+                ORDER BY event.start
+                """, arguments: [from, to])
+        }
+        var seen = Set<String>()
+        return rows.filter { seen.insert("\($0.account)|\($0.recurringEventId ?? $0.id)").inserted }
+    }
+
+    // MARK: Write queue (§18.3)
+
+    public func enqueue(_ write: PendingWrite) throws {
+        try db.write { db in
+            var w = write
+            try w.insert(db)
+        }
+    }
+
+    public func nextWrite() throws -> PendingWrite? {
+        try db.read { try PendingWrite.order(Column("id")).fetchOne($0) }
+    }
+
+    public func removeWrite(_ id: Int64) throws {
+        try db.write { _ = try PendingWrite.deleteOne($0, key: id) }
+    }
+
+    public func pendingWriteCount() throws -> Int {
+        try db.read { try PendingWrite.fetchCount($0) }
+    }
+
     /// Sign-out (§8.5): everything cached for the account.
     public func deleteAccount(_ account: String) throws {
         try db.write { db in
             try EventInstance.filter(Column("account") == account).deleteAll(db)
             try CalendarInfo.filter(Column("account") == account).deleteAll(db)
             try EventColor.filter(Column("account") == account).deleteAll(db)
+            try PendingWrite.filter(Column("account") == account).deleteAll(db)
         }
     }
 }

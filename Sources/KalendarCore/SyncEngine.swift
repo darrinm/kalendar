@@ -158,7 +158,7 @@ public final class SyncEngine {
         }.compactMap(\.nextSyncToken).last
         let instances = try await eventPages(calendar) {
             GoogleCalendarAPI.windowRequest(calendarId: calendar.id, from: from, to: to, pageToken: $0)
-        }.flatMap { instances(in: $0, calendar: calendar) }
+        }.flatMap { parsed($0, calendar: calendar) }
 
         try cache.replaceEvents(instances, account: calendar.account, calendarId: calendar.id)
         var updated = calendar
@@ -211,14 +211,14 @@ public final class SyncEngine {
         do {
             return try await eventPages(calendar) {
                 GoogleCalendarAPI.instancesRequest(calendarId: calendar.id, eventId: seriesId, from: from, to: to, pageToken: $0)
-            }.flatMap { instances(in: $0, calendar: calendar) }
+            }.flatMap { parsed($0, calendar: calendar) }
         } catch let error as GoogleCalendarAPI.APIError where error == .notFound || error == .syncTokenExpired {
             // 404 or 410 Gone on an instances request means the series was deleted
             return []
         }
     }
 
-    private func instances(in page: GoogleCalendarAPI.EventsPage, calendar: CalendarInfo) -> [EventInstance] {
+    private func parsed(_ page: GoogleCalendarAPI.EventsPage, calendar: CalendarInfo) -> [EventInstance] {
         (page.items ?? []).compactMap { $0.instance(account: calendar.account, calendarId: calendar.id) }
     }
 

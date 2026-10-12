@@ -197,7 +197,10 @@ struct TaskRow: View {
             .accessibilityLabel(task.completed ? "Uncomplete" : "Complete")
             VStack(alignment: .leading, spacing: 1) {
                 if let due = task.due, showsDue || overdue {
-                    Text(due.formatted(.dateTime.month(.abbreviated).day()))
+                    // "Sep 28"; a date in another year shows it: "Jul 17, 2023"
+                    Text(Calendar.current.isDate(due, equalTo: today, toGranularity: .year)
+                         ? due.formatted(.dateTime.month(.abbreviated).day())
+                         : due.formatted(.dateTime.month(.abbreviated).day().year()))
                         .uiFont(11)
                         .foregroundStyle(overdue ? Theme.wait : Theme.muted)
                 }

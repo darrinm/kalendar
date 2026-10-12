@@ -368,8 +368,10 @@ public final class CalendarCache: @unchecked Sendable {
 
     // MARK: Tasks (§10)
 
+    /// In Google's order within each account, so the default list (§2) comes first: rows are saved
+    /// as `tasklists.list` returns them and keep their row when updated.
     public func taskLists() throws -> [TaskList] {
-        try db.read { try TaskList.order(Column("account"), Column("title")).fetchAll($0) }
+        try db.read { try TaskList.order(Column("account"), Column.rowID).fetchAll($0) }
     }
 
     /// Replaces the account's lists, keeping each surviving list's sync time; a list gone from

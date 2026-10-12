@@ -224,10 +224,11 @@ final class AgendaModel {
             let key = "\(t.listKey)|\(parent)"
             return keys.contains(key) ? key : nil
         }
+        // open tasks before completed ones in either sort
         let order: (TaskItem, TaskItem) -> Bool = switch taskSort {
         // undated last; then title, so the order is stable
-        case .dueDate: { ($0.due ?? .distantFuture, $0.title) < ($1.due ?? .distantFuture, $1.title) }
-        case .myOrder: { ($0.listKey, $0.position) < ($1.listKey, $1.position) }
+        case .dueDate: { ($0.completed ? 1 : 0, $0.due ?? .distantFuture, $0.title) < ($1.completed ? 1 : 0, $1.due ?? .distantFuture, $1.title) }
+        case .myOrder: { ($0.completed ? 1 : 0, $0.listKey, $0.position) < ($1.completed ? 1 : 0, $1.listKey, $1.position) }
         }
         taskRows = (byParent[nil] ?? []).sorted(by: order).flatMap { root in
             [(root, 0)] + (byParent[root.key] ?? []).sorted { $0.position < $1.position }.map { ($0, 1) }

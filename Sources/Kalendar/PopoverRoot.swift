@@ -383,8 +383,11 @@ private struct SuggestionList: View {
         case .calendar(let c):
             HStack(spacing: 8) {
                 CalendarDot(hex: c.backgroundColor)
-                Text(c.summary).foregroundStyle(Theme.text)
-                Text(c.account).foregroundStyle(Theme.muted).lineLimit(1)
+                Text(c.summary).foregroundStyle(Theme.text).lineLimit(1).layoutPriority(1)
+                // a primary calendar is named after its account; the account would repeat it
+                if c.summary != c.account {
+                    Text(c.account).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.middle)
+                }
             }
             .uiFont(13)
         case .contact(let c):

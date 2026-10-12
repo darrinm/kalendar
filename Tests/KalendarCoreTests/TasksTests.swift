@@ -210,4 +210,13 @@ final class TasksTests: XCTestCase {
         XCTAssertEqual(try cache.pendingWriteCount(), 0)
         XCTAssertTrue(writer.canMove(child, to: work), "a subtask has none of its own")
     }
+
+    /// Google lists the default list first; the cache keeps that order (§2: the default task list).
+    func testListsKeepGooglesOrder() throws {
+        try cache.replaceTaskLists([TaskList(account: me, id: "d", title: "Zed's list"),
+                                    TaskList(account: me, id: "b", title: "Beach")], account: me)
+        try cache.replaceTaskLists([TaskList(account: me, id: "d", title: "Zed's list"),
+                                    TaskList(account: me, id: "b", title: "Beach")], account: me)
+        XCTAssertEqual(try cache.taskLists().map(\.id), ["d", "b"])
+    }
 }

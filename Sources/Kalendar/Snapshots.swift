@@ -17,6 +17,29 @@ enum Snapshots {
                       size: PopoverController.size(scale: size.scale), appearance: appearance, to: file)
             }
         }
+        // states reached by typing and clicking; nothing here writes to Google
+        let popover = { (name: String) in
+            write(PopoverRoot(model: model), size: PopoverController.size(scale: 1), appearance: .dark,
+                  to: url.appendingPathComponent("\(name).png"))
+        }
+        for (name, input) in [("new-event", "Lunch tomorrow noon at Tartine"), ("new-task", "todo buy milk tomorrow 3pm"),
+                              ("suggest-contact", "Sync with Da"), ("suggest-calendar", "/")] {
+            model.input = input
+            popover(name)
+        }
+        model.input = ""
+        model.agenda.showsTasks = true
+        popover("tasks")
+        model.agenda.showsTasks = false
+        let agenda = model.agenda
+        if let event = agenda.sections.lazy.flatMap(\.timed).first {
+            write(EventEditor(model: EventEditorModel(event: event, agenda: agenda, writer: model.writer)).frame(width: 300),
+                  size: NSSize(width: 300, height: 640), appearance: .dark, to: url.appendingPathComponent("event-detail.png"))
+        }
+        if let task = agenda.sections.lazy.flatMap(\.tasks).first {
+            write(TaskEditor(model: TaskEditorModel(task: task, agenda: agenda, writer: model.writer)).frame(width: 300),
+                  size: NSSize(width: 300, height: 300), appearance: .dark, to: url.appendingPathComponent("task-detail.png"))
+        }
         for tab in 0..<SettingsView.tabCount {
             write(settings(tab), size: SettingsView.size, appearance: .dark,
                   to: url.appendingPathComponent("settings-\(tab).png"))

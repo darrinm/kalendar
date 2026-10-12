@@ -130,12 +130,11 @@ public final class SyncEngine {
             wrote = true
         }
 
-        await syncContactsIfStale(account: account)
-
         // calendars sync concurrently, so their requests overlap; a free/busy-only calendar returns
-        // no event details, so there is nothing to show for it
+        // no event details, so there is nothing to show for it. Contacts load alongside them.
         let calendars = try cache.calendars(account: account).filter { $0.accessRole != "freeBusyReader" }
         try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { await self.syncContactsIfStale(account: account) }
             for calendar in calendars {
                 group.addTask { try await self.sync(calendar: calendar) }
             }
@@ -227,8 +226,10 @@ public final class SyncEngine {
         }
     }
 
-    /// Fetches the account's contacts when they are a day old or Refresh All asked (§18.4). A failure
-    /// only logs: suggestions keep the previous contacts, and calendar sync goes on.
+    /// Fetches the account's contacts when they are a day old or Refresh All asked (§18.4). A source
+    /// Google refuses (a contacts scope the user unticked, the directory of a personal account) is
+    /// skipped. Any other failure only logs: suggestions keep the previous contacts, the next sync
+    /// tries again, and calendar sync goes on.
     private func syncContactsIfStale(account: String) async {
         if let last = contactsSynced[account], now().timeIntervalSince(last) < 86400 { return }
         var contacts: [Contact] = []
@@ -236,12 +237,13 @@ public final class SyncEngine {
             do {
                 contacts += try await pages(GooglePeopleAPI.Page.self, for: account) { source.request(pageToken: $0) }
                     .flatMap { $0.contacts(account: account) }
-            } catch {
+            } catch where source == .directory {
                 // the directory exists only for Workspace accounts; a personal account answers with an error
-                if source != .directory {
-                    Log.sync.error("contacts \(String(describing: source)) failed: \(error.localizedDescription)")
-                    return
-                }
+            } catch GoogleCalendarAPI.APIError.http(let status) where (400..<500).contains(status) && status != 429 {
+                Log.sync.info("contacts \(String(describing: source)) refused (\(status)); skipped")
+            } catch {
+                Log.sync.error("contacts \(String(describing: source)) failed: \(error.localizedDescription)")
+                return
             }
         }
         try? cache.replaceContacts(contacts, account: account)

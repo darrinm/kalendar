@@ -23,6 +23,8 @@ public struct CalendarInfo: Codable, Equatable, Hashable, FetchableRecord, Persi
     public var defaultReminders: [Int] = []
 
     public var key: String { "\(account)|\(id)" }
+    /// Whether the user can add and edit events on it.
+    public var isWritable: Bool { accessRole == "owner" || accessRole == "writer" }
     /// For a calendar or event Google gave no color.
     public static let fallbackColor = "#9A9A9A"
 }

@@ -40,7 +40,8 @@ final class NewItemModel {
     @ObservationIgnored private var chosenInvitees: [Contact] = []
     @ObservationIgnored private var dismissedTrigger: String?
     @ObservationIgnored private let places = PlaceSearch()
-    @ObservationIgnored private var lastInput = ""
+    /// `with <name>` lookups for this entry, so each keystroke queries the cache once, not twice.
+    @ObservationIgnored private var contactEmails: [String: String?] = [:]
 
     init(agenda: AgendaModel, writer: EventWriter, accounts: AccountStore) {
         self.agenda = agenda
@@ -55,8 +56,8 @@ final class NewItemModel {
 
     /// The calendar for a new event: the one picked with `/`, else the first account's primary.
     private func calendar(for query: String?) -> CalendarInfo? {
-        let writable = agenda.calendars.filter { $0.accessRole == "owner" || $0.accessRole == "writer" }
         if let chosenCalendar { return chosenCalendar }
+        let writable = agenda.calendars.filter(\.isWritable)
         if let q = query?.lowercased(), !q.isEmpty,
            let match = writable.first(where: { $0.summary.lowercased().hasPrefix(q) }) {
             return match
@@ -66,18 +67,18 @@ final class NewItemModel {
     }
 
     func update(input: String) {
-        lastInput = input
         guard !input.trimmingCharacters(in: .whitespaces).isEmpty else {
             reset()
             return
         }
-        let cache = agenda.cache
-        let parser = NLParser(defaultDay: defaultDay) { try? cache.uniqueContactEmail(named: $0) }
+        let parser = NLParser(defaultDay: defaultDay) { [weak self] in self?.contactEmail(named: $0) }
         let parsed = parser.parse(input)
         guard let calendar = calendar(for: parsed.calendarQuery) else { return }
         var draft = EventDraft(parsed: parsed, account: calendar.account, calendarId: calendar.id)
         if let chosenLocation { draft.location = chosenLocation }
-        let emails = parsed.invitees + chosenInvitees.map(\.email)
+        // each guest once, and never the organizer again
+        var seen: Set<String> = [calendar.account.lowercased()]
+        let emails = (parsed.invitees + chosenInvitees.map(\.email)).filter { seen.insert($0.lowercased()).inserted }
         if !emails.isEmpty {
             // the organizer is listed with the guests, as Google does
             draft.attendees = [Attendee(email: calendar.account, displayName: nil, isSelf: true, organizer: true,
@@ -89,10 +90,20 @@ final class NewItemModel {
         }
         if let form { form.follow(draft) } else { form = EventEditorModel(newDraft: draft, agenda: agenda, writer: writer) }
 
+        let previous = trigger
         trigger = parsed.trigger
         if let t = trigger, "\(t.kind)|\(t.query)" == dismissedTrigger { trigger = nil }
+        // a new or narrowed list starts at its first row
+        if trigger?.kind != previous?.kind || trigger?.query != previous?.query { selected = 0 }
         if trigger?.kind == .location { places.query = trigger!.query } else { places.query = "" }
         refreshSuggestions()
+    }
+
+    private func contactEmail(named name: String) -> String? {
+        if let cached = contactEmails[name] { return cached }
+        let email = try? agenda.cache.uniqueContactEmail(named: name)
+        contactEmails[name] = email
+        return email
     }
 
     private func refreshSuggestions() {
@@ -104,7 +115,7 @@ final class NewItemModel {
         switch trigger.kind {
         case .calendar:
             suggestions = agenda.calendars
-                .filter { ($0.accessRole == "owner" || $0.accessRole == "writer") && (q.isEmpty || $0.summary.lowercased().hasPrefix(q)) }
+                .filter { $0.isWritable && (q.isEmpty || $0.summary.lowercased().hasPrefix(q)) }
                 .map(Suggestion.calendar)
         case .contact:
             suggestions = q.isEmpty ? [] : ((try? agenda.cache.contacts(matching: trigger.query)) ?? []).map(Suggestion.contact)
@@ -170,6 +181,7 @@ final class NewItemModel {
         chosenLocation = nil
         chosenInvitees = []
         dismissedTrigger = nil
+        contactEmails = [:]
         places.query = ""
     }
 }

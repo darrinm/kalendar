@@ -43,7 +43,7 @@ struct PopoverRoot: View {
                         AgendaList(model: agenda, sections: agenda.sections, extendsAtEnd: true, actions: model)
                     }
                 }
-                if model.newItem.showsSuggestions {
+                if model.showsSuggestions {
                     SuggestionList(model: model)
                 }
             }

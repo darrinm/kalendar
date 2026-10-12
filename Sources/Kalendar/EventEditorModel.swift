@@ -72,8 +72,7 @@ final class EventEditorModel {
 
     var writableCalendars: [CalendarInfo] {
         agenda.calendars.filter { c in
-            (c.accessRole == "owner" || c.accessRole == "writer")
-                && (c.account == event.account || !isInvitation)
+            c.isWritable && (c.account == event.account || !isInvitation)
         }
     }
 

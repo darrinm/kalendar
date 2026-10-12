@@ -83,8 +83,9 @@ private struct DayCell: View {
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) { model.select(day); onDoubleClick(day) }
-        .onTapGesture { model.select(day) }
+        // the single click selects at once rather than waiting out the double-click interval
+        .gesture(TapGesture(count: 2).onEnded { onDoubleClick(day) })
+        .simultaneousGesture(TapGesture().onEnded { model.select(day) })
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel(isToday: isToday, count: marks.colors.count))
         .accessibilityAddTraits(.isButton)

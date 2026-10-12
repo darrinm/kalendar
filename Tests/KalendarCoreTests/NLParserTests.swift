@@ -117,6 +117,16 @@ final class NLParserTests: XCTestCase {
         XCTAssertEqual(formatter.string(from: p.parse("Lunch tomorrow noon").start), "2026-09-22 12:00")
     }
 
+    /// "sun", "sat", "wed" after an article or "in" are words, not days.
+    func testAmbiguousAbbreviations() {
+        let p = parser()
+        XCTAssertEqual(p.parse("Beach day in the sun").title, "Beach day in the sun")
+        XCTAssertTrue(p.parse("Beach day in the sun").allDay)
+        XCTAssertFalse(p.parse("Beach day in the sun").hasDate)
+        XCTAssertEqual(p.parse("Lunch sat").title, "Lunch")
+        XCTAssertEqual(formatter.string(from: p.parse("Lunch sat").start), "2026-09-26 00:00")
+    }
+
     func testClockReadings() {
         XCTAssertEqual(NLParser.clock("3pm", bareNumbers: false).map { [$0.h, $0.m] }, [15, 0])
         XCTAssertEqual(NLParser.clock("12am", bareNumbers: false).map { [$0.h, $0.m] }, [0, 0])

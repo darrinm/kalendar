@@ -181,6 +181,9 @@ final class PopoverModel {
 
     func focusInput() { focusRequest += 1 }
 
+    /// The new-item suggestion list shows, and takes keys, only while typing a new item, not in search.
+    var showsSuggestions: Bool { !agenda.searchMode && newItem.showsSuggestions }
+
     /// Every open starts on today (§4) with the agenda list, not search.
     func willOpen() {
         agenda.isVisible = true
@@ -188,12 +191,14 @@ final class PopoverModel {
         agenda.query = ""
         agenda.selectedEvent = nil
         agenda.resetToToday()
+        // a double-clicked day dates only the entry it started
+        if input.isEmpty { newItem.defaultDay = nil }
     }
 
     /// Esc: hides suggestions; clears the field if it has text; leaves search; otherwise closes the
     /// popover (§4, §9, §11).
     func escape() {
-        if newItem.showsSuggestions {
+        if showsSuggestions {
             newItem.dismissSuggestions()
         } else if agenda.searchMode {
             if agenda.query.isEmpty { toggleSearch() } else { agenda.query = "" }
@@ -216,12 +221,10 @@ final class PopoverModel {
     func addNewItem() {
         guard newItem.add() else { return }
         input = ""
-        let added = Date()
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             // unless the user started something else in the meantime
-            guard let self, input.isEmpty, !agenda.searchMode, agenda.selectedEvent == nil,
-                  Date().timeIntervalSince(added) >= 2 else { return }
+            guard let self, input.isEmpty, !agenda.searchMode, agenda.selectedEvent == nil else { return }
             agenda.resetToToday()
         }
     }
@@ -324,7 +327,7 @@ final class PopoverModel {
     func handleKey(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         // the suggestion list takes ↑ ↓ Enter Tab while it shows (§5.2)
-        if newItem.showsSuggestions, flags.isEmpty {
+        if showsSuggestions, flags.isEmpty {
             switch event.keyCode {
             case 126: newItem.moveSelection(by: -1); return true
             case 125: newItem.moveSelection(by: 1); return true

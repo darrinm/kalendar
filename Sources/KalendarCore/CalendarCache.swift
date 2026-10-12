@@ -140,9 +140,7 @@ public final class CalendarCache: @unchecked Sendable {
     /// Case-insensitive substring search over selected calendars (§9). `All` is title, location,
     /// notes and attendee names and emails.
     public func search(_ text: String, scope: SearchScope) throws -> [EventInstance] {
-        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_")
-        let pattern = "%\(escaped)%"
+        let pattern = Self.containsPattern(text)
         // attendees is a JSON array; match only each attendee's name and email, not the JSON keys
         let invitees = "EXISTS (SELECT 1 FROM json_each(event.attendees) WHERE "
             + "json_extract(value, '$.email') LIKE :p ESCAPE '\\' "
@@ -162,6 +160,13 @@ public final class CalendarCache: @unchecked Sendable {
                 ORDER BY event.start LIMIT 500
                 """, arguments: ["p": pattern])
         }
+    }
+
+    /// A `LIKE … ESCAPE '\\'` pattern matching any text that contains `text` literally.
+    static func containsPattern(_ text: String) -> String {
+        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_")
+        return "%\(escaped)%"
     }
 
     /// colorId → "#rrggbb" for each account.
@@ -317,7 +322,7 @@ public final class CalendarCache: @unchecked Sendable {
     public func contacts(matching query: String, limit: Int = 8) throws -> [Contact] {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return [] }
-        let like = "%\(q.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_"))%"
+        let like = Self.containsPattern(q)
         return try db.read { db in
             var found = try Contact.fetchAll(db, sql: """
                 SELECT * FROM contact WHERE name LIKE :p ESCAPE '\\' OR email LIKE :p ESCAPE '\\'
@@ -359,7 +364,7 @@ public final class CalendarCache: @unchecked Sendable {
     /// Locations of past events that contain `query`, most recent first (§5.2: "previous
     /// locations first").
     public func recentLocations(matching query: String, limit: Int = 3) throws -> [String] {
-        let like = "%\(query.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_"))%"
+        let like = Self.containsPattern(query)
         return try db.read { db in
             try String.fetchAll(db, sql: """
                 SELECT location FROM event WHERE location LIKE ? ESCAPE '\\' AND location NOT LIKE 'http%'

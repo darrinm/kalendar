@@ -378,6 +378,11 @@ public struct NLParser {
         if (w == "next" || w == "this"), let d = s.word(i + 1).flatMap(Self.weekday) {
             return (w == "next" ? nextWeek(weekday: d) : coming(weekday: d), 2)
         }
+        // "in the sun", "a sat phone": an abbreviation that is also an English word is a date only
+        // when it doesn't follow an article or "in"/"my"
+        if Self.ambiguous.contains(w), i > 0, let before = s.word(i - 1), ["the", "a", "an", "in", "my"].contains(before) {
+            return nil
+        }
         if let d = Self.weekday(w) { return (coming(weekday: d), 1) }
         if let month = Self.monthNumber(w), let dayWord = s.word(i + 1), let day = Self.dayNumber(dayWord) {
             if let yw = s.word(i + 2), let year = Int(yw), year > 1900, let d = dayDate(month: month, day: day, year: year) {
@@ -554,6 +559,9 @@ public struct NLParser {
     ]
 
     static func weekday(_ w: String) -> Int? { weekdayNames.first { $0.0 == w }?.1 }
+
+    /// Weekday and month abbreviations that are also common words.
+    private static let ambiguous: Set<String> = ["sun", "sat", "wed", "mon", "may", "mar"]
 
     private static let monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 

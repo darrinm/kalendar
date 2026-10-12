@@ -70,7 +70,7 @@ final class NewItemModel {
            let match = writable.first(where: { $0.summary.lowercased().hasPrefix(q) }) {
             return match
         }
-        if let key = Preferences.shared.defaultCalendar, let c = writable.first(where: { $0.key == key }) { return c }
+        if let key = Preferences.shared.defaultCalendar, let c = agenda.calendar(forKey: key), c.isWritable { return c }
         return agenda.defaultCalendar(account: accounts.accounts.first?.email)
     }
 
@@ -80,7 +80,9 @@ final class NewItemModel {
             reset()
             return
         }
-        let parser = NLParser(calendar: Preferences.shared.calendar, defaultDuration: TimeInterval(Preferences.shared.defaultDuration * 60), defaultDay: defaultDay) { [weak self] in self?.contacts.uniqueEmail(named: $0) }
+        let prefs = Preferences.shared
+        let parser = NLParser(calendar: prefs.calendar, defaultDuration: TimeInterval(prefs.defaultDuration * 60),
+                              defaultDay: defaultDay) { [weak self] in self?.contacts.uniqueEmail(named: $0) }
         let parsed = parser.parse(input)
         // without a task list there is nowhere to add a task, so the input stays an event
         if chosenKind ?? parsed.isTask, !agenda.taskLists.isEmpty {

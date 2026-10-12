@@ -11,10 +11,10 @@ import SwiftUI
 @MainActor
 final class PopoverController: NSObject, NSPopoverDelegate {
     /// The Mini Window grows with the text size (§12).
-    static var size: NSSize {
-        let scale = Preferences.shared.textSize.scale
-        return NSSize(width: (320 * scale).rounded(), height: (600 * scale).rounded())
+    static func size(scale: CGFloat) -> NSSize {
+        NSSize(width: (320 * scale).rounded(), height: (600 * scale).rounded())
     }
+    private static var size: NSSize { size(scale: Preferences.shared.textSize.scale) }
 
     private let popover = NSPopover()
     private var detail: NSPopover?
@@ -38,7 +38,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         model.contentView = { [weak self] in self?.popover.contentViewController?.view }
         model.childShown = { [weak self] in self?.detail != nil }
         model.closeChild = { [weak self] in self?.closeChild() ?? true }
-        popover.contentViewController = NSHostingController(rootView: PopoverRoot(model: model))
+        popover.contentViewController = NSHostingController(rootView: TextScaled(PopoverRoot(model: model)))
     }
 
     var isShown: Bool { popover.isShown }
@@ -91,7 +91,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         let child = NSPopover()
         child.behavior = .transient
         child.delegate = self
-        child.contentViewController = NSHostingController(rootView: content.frame(width: width))
+        child.contentViewController = NSHostingController(rootView: TextScaled(content.frame(width: width)))
         // AppKit flips to the opposite edge when there is no room
         child.show(relativeTo: view.bounds, of: view, preferredEdge: edge)
         Self.paintFrame(of: child)
@@ -152,6 +152,27 @@ final class PopoverController: NSObject, NSPopoverDelegate {
             guard let self, event.window === popover.contentViewController?.view.window else { return event }
             return model.handleKey(event) ? nil : event
         }
+    }
+}
+
+extension SyncEngine {
+    /// The calendar visibility toggles (§4.4, §12): a failed write is logged; the engine reverts it.
+    func setVisible(_ selected: Bool, calendar: CalendarInfo) async {
+        do {
+            try await setSelected(selected, calendar: calendar)
+        } catch {
+            Log.sync.error("calendar visibility write failed: \(error.localizedDescription)")
+        }
+    }
+}
+
+/// Applies the Text size setting (§12) to a hosted view tree, following changes.
+struct TextScaled<Content: View>: View {
+    let content: Content
+    init(_ content: Content) { self.content = content }
+
+    var body: some View {
+        content.environment(\.textScale, Preferences.shared.textSize.scale)
     }
 }
 
@@ -306,26 +327,27 @@ final class PopoverModel {
     }
 
     /// The rows on screen, in order: search results, the Tasks view, or the agenda. An event that
-    /// spans several days is listed once, at its first day, so ↓ can move past it.
-    var listItems: [ListItem] {
-        let items: [ListItem]
+    /// spans several days is listed under each, so ↑ ↓ use `listItems`, which keeps its first.
+    private var rows: some Sequence<ListItem> {
         if agenda.searchMode {
-            items = agenda.searchResults.flatMap { ($0.allDay + $0.timed).map(ListItem.event) }
-        } else if agenda.showsTasks {
-            items = agenda.taskRows.map { .task($0.task) }
-        } else {
-            items = agenda.sections.flatMap { s in
-                s.allDay.map(ListItem.event) + s.tasks.map(ListItem.task) + s.timed.map(ListItem.event)
-            }
+            return AnySequence(agenda.searchResults.lazy.flatMap { ($0.allDay + $0.timed).map(ListItem.event) })
         }
-        var seen = Set<String>()
-        return items.filter { seen.insert($0.key).inserted }
+        if agenda.showsTasks { return AnySequence(agenda.taskRows.lazy.map { .task($0.task) }) }
+        return AnySequence(agenda.sections.lazy.flatMap { s in
+            s.allDay.map(ListItem.event) + s.tasks.map(ListItem.task) + s.timed.map(ListItem.event)
+        })
     }
 
-    /// The selected row, if it is still listed.
+    /// Each row once, so ↓ can move past a multi-day event.
+    var listItems: [ListItem] {
+        var seen = Set<String>()
+        return rows.filter { seen.insert($0.key).inserted }
+    }
+
+    /// The selected row, if it is still listed; stops at the first match.
     private var selectedItem: ListItem? {
         guard let key = agenda.selectedEvent else { return nil }
-        return listItems.first { $0.key == key }
+        return rows.first { $0.key == key }
     }
 
     func moveSelection(by delta: Int) {
@@ -358,12 +380,6 @@ final class PopoverModel {
         focusInput()
     }
 
-    /// The selected event, if it is still cached.
-    var selectedEvent: EventInstance? {
-        if case .event(let e) = selectedItem { return e }
-        return nil
-    }
-
     /// Go to Previous / Next Occurrence (§7.1): selects that occurrence's day and the occurrence.
     func goToOccurrence(of event: EventInstance, forward: Bool) {
         guard let series = event.recurringEventId,
@@ -382,12 +398,6 @@ final class PopoverModel {
         NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
     }
 
-    /// The selected task, in the agenda or the Tasks view.
-    var selectedTask: TaskItem? {
-        if case .task(let t) = selectedItem { return t }
-        return nil
-    }
-
     func deleteTask(_ task: TaskItem) {
         writer.deleteTask(task)
         agenda.selectedEvent = nil
@@ -395,7 +405,11 @@ final class PopoverModel {
 
     /// ⌫ and Delete Item: the selected event or task.
     func deleteSelection() {
-        if let event = selectedEvent { delete(event) } else if let task = selectedTask { deleteTask(task) }
+        switch selectedItem {
+        case .event(let e): delete(e)
+        case .task(let t): deleteTask(t)
+        case nil: break
+        }
     }
 
     var hasSelection: Bool { selectedItem != nil }
@@ -439,13 +453,7 @@ final class PopoverModel {
     }
 
     func setSelected(_ selected: Bool, calendar: CalendarInfo) {
-        Task {
-            do {
-                try await agenda.engine.setSelected(selected, calendar: calendar)
-            } catch {
-                Log.sync.error("calendar visibility write failed: \(error.localizedDescription)")
-            }
-        }
+        Task { await agenda.engine.setVisible(selected, calendar: calendar) }
     }
 
     /// Returns true when the key was handled (§11).
@@ -467,13 +475,10 @@ final class PopoverModel {
         }
         // the list's selection (§11): ↑ ↓ move it, Enter opens it; in search once ⌘↓ chose a result
         let listHasKeys = (input.isEmpty && !agenda.searchMode) || (agenda.searchMode && agenda.selectedEvent != nil)
-        if listHasKeys, flags.subtracting(.function).isEmpty {
-            switch event.keyCode {
-            case 126: moveSelection(by: -1); return true
-            case 125: moveSelection(by: 1); return true
-            case 36, 76: if hasSelection { openSelection(); return true }
-            default: break
-            }
+        if listHasKeys, flags.isEmpty {
+            if event.keyCode == 126 { moveSelection(by: -1); return true }
+            if event.keyCode == 125 { moveSelection(by: 1); return true }
+            if enter, hasSelection { openSelection(); return true }
         }
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch (flags, key) {
@@ -489,7 +494,7 @@ final class PopoverModel {
         default: break
         }
         // ⌘↓: from the search field to the first result (§11)
-        if agenda.searchMode, flags.subtracting(.function) == [.command], event.keyCode == 125 {
+        if agenda.searchMode, flags == [.command], event.keyCode == 125 {
             agenda.selectedEvent = listItems.first?.key
             return true
         }
@@ -500,7 +505,7 @@ final class PopoverModel {
             return true
         }
         guard input.isEmpty, !agenda.searchMode else { return false }
-        switch (flags.subtracting(.function), event.keyCode) {
+        switch (flags, event.keyCode) {
         case ([], 123): agenda.moveMonth(by: -1)         // ←
         case ([], 124): agenda.moveMonth(by: 1)          // →
         case ([.shift], 123): agenda.moveDay(by: -1)     // ⇧←

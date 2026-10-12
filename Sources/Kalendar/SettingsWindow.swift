@@ -44,6 +44,8 @@ struct SettingsView: View {
     let alerts: AlertScheduler
     let signIn: (String?) -> Void
     @State var tab = 0
+    static let size = NSSize(width: 520, height: 460)
+    static let tabCount = 5
 
     var body: some View {
         TabView(selection: $tab) {
@@ -58,7 +60,7 @@ struct SettingsView: View {
             CalendarsSettings(cache: cache, engine: engine)
                 .tabItem { Label("Calendars", systemImage: "calendar") }.tag(4)
         }
-        .frame(width: 520, height: 460)
+        .frame(width: Self.size.width, height: Self.size.height)
         .tint(Theme.accent)
     }
 }
@@ -70,12 +72,16 @@ private struct GeneralSettings: View {
     @Bindable private var prefs = Preferences.shared
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var automaticUpdates = UpdaterController.shared.automaticallyChecks
+    @State private var calendars: [CalendarInfo] = []
+    @State private var lists: [TaskList] = []
+
+    /// "8:00 AM" … for Day starts at.
+    private static let hours = (0..<24).map { hour in
+        (hour, Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date())!
+            .formatted(date: .omitted, time: .shortened))
+    }
 
     var body: some View {
-        // re-read when a sync finishes, so new calendars and lists appear
-        let _ = engine.lastSync
-        let calendars = ((try? cache.calendars()) ?? []).filter(\.isWritable)
-        let lists = (try? cache.taskLists()) ?? []
         Form {
             // reads back the actual state, which can differ from the request (approval pending)
             Toggle("Launch at login", isOn: Binding(
@@ -98,10 +104,7 @@ private struct GeneralSettings: View {
                 ForEach(1...7, id: \.self) { Text(Calendar.current.weekdaySymbols[$0 - 1]).tag($0) }
             }
             Picker("Day starts at", selection: $prefs.dayStartHour) {
-                ForEach(0..<24, id: \.self) { hour in
-                    Text(Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date())!
-                        .formatted(date: .omitted, time: .shortened)).tag(hour)
-                }
+                ForEach(Self.hours, id: \.0) { Text($0.1).tag($0.0) }
             }
             Toggle("Play UI sounds", isOn: $prefs.playSounds)
             Toggle("Go to today after adding items", isOn: $prefs.goToTodayAfterAdding)
@@ -122,6 +125,11 @@ private struct GeneralSettings: View {
                 .disabled(!UpdaterController.shared.isAvailable)
         }
         .formStyle(.grouped)
+        // re-read when a sync finishes, so new calendars and lists appear
+        .task(id: engine.lastSync) {
+            calendars = ((try? cache.calendars()) ?? []).filter(\.isWritable)
+            lists = (try? cache.taskLists()) ?? []
+        }
         .task { await alerts.refreshPermission() }
         // back from System Settings
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -188,14 +196,18 @@ private struct CalendarsSettings: View {
     let cache: CalendarCache
     let engine: SyncEngine
     @Bindable private var prefs = Preferences.shared
-    /// Toggled calendars whose write is in flight. The cache changes at once, but this view
-    /// re-reads it only when the overlay or `lastSync` changes.
+    /// Toggled calendars whose write is in flight.
     @State private var pending: [String: Bool] = [:]
+    @State private var calendars: [String: [CalendarInfo]] = [:]
+    @State private var lists: [String: [TaskList]] = [:]
+
+    /// The cache's calendars and lists, by account: after each sync and each visibility write.
+    private func load() {
+        calendars = Dictionary(grouping: (try? cache.calendars()) ?? [], by: \.account)
+        lists = Dictionary(grouping: (try? cache.taskLists()) ?? [], by: \.account)
+    }
 
     var body: some View {
-        let _ = engine.lastSync
-        let calendars = Dictionary(grouping: (try? cache.calendars()) ?? [], by: \.account)
-        let lists = Dictionary(grouping: (try? cache.taskLists()) ?? [], by: \.account)
         Form {
             ForEach(calendars.keys.sorted(), id: \.self) { account in
                 Section("Calendars: \(account)") {
@@ -203,16 +215,13 @@ private struct CalendarsSettings: View {
                         Toggle(isOn: Binding(get: { pending[calendar.key] ?? calendar.selected }, set: { selected in
                             pending[calendar.key] = selected
                             Task {
-                                do {
-                                    try await engine.setSelected(selected, calendar: calendar)
-                                } catch {
-                                    Log.sync.error("calendar visibility write failed: \(error.localizedDescription)")
-                                }
+                                await engine.setVisible(selected, calendar: calendar)
+                                load()
                                 pending[calendar.key] = nil
                             }
                         })) {
                             HStack {
-                                Circle().fill(Color(hex: calendar.backgroundColor)).frame(width: 8, height: 8)
+                                CalendarDot(hex: calendar.backgroundColor)
                                 Text(calendar.summary)
                             }
                         }
@@ -231,6 +240,7 @@ private struct CalendarsSettings: View {
             }
         }
         .formStyle(.grouped)
+        .task(id: engine.lastSync) { load() }
     }
 }
 

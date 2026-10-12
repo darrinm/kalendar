@@ -19,6 +19,13 @@ final class Preferences {
     }
     enum Appearance: String, CaseIterable {
         case system = "System", light = "Light", dark = "Dark"
+        var nsAppearance: NSAppearance? {
+            switch self {
+            case .system: nil
+            case .light: NSAppearance(named: .aqua)
+            case .dark: NSAppearance(named: .darkAqua)
+            }
+        }
     }
 
     /// The global shortcut (§11): a virtual key code and Carbon modifier flags.
@@ -30,13 +37,16 @@ final class Preferences {
 
     @ObservationIgnored private let defaults: UserDefaults
     /// Called after any setting changes.
-    @ObservationIgnored var onChange: () -> Void = {}
+    /// Called after a setting changes, with its UserDefaults key. Views observe the properties
+    /// themselves; this is for the AppKit side and the cached agenda.
+    @ObservationIgnored var onChange: (String) -> Void = { _ in }
 
     // General
     var hotkey: Hotkey {
         didSet {
             defaults.set(hotkey.keyCode, forKey: "hotkeyKeyCode")
-            save(hotkey.modifiers, "hotkeyModifiers")   // one onChange for both keys
+            defaults.set(hotkey.modifiers, forKey: "hotkeyModifiers")
+            onChange("hotkey")
         }
     }
     /// A `CalendarInfo.key`; nil uses the first account's primary calendar.
@@ -46,7 +56,12 @@ final class Preferences {
     /// Minutes.
     var defaultDuration: Int { didSet { save(defaultDuration, "defaultDuration") } }
     /// 1 = Sunday … 7 = Saturday; 0 follows the system.
-    var firstWeekday: Int { didSet { save(firstWeekday, "firstWeekday") } }
+    var firstWeekday: Int {
+        didSet {
+            calendar = Self.calendar(firstWeekday: firstWeekday)
+            save(firstWeekday, "firstWeekday")
+        }
+    }
     /// The hour a new timed slot starts at when the input names no time.
     var dayStartHour: Int { didSet { save(dayStartHour, "dayStartHour") } }
     var playSounds: Bool { didSet { save(playSounds, "playSounds") } }
@@ -83,7 +98,9 @@ final class Preferences {
         defaultCalendar = defaults.string(forKey: "defaultCalendar")
         defaultTaskList = defaults.string(forKey: "defaultTaskList")
         defaultDuration = value("defaultDuration", 60)
-        firstWeekday = value("firstWeekday", 0)
+        let weekday = value("firstWeekday", 0)
+        firstWeekday = weekday
+        calendar = Self.calendar(firstWeekday: weekday)
         dayStartHour = value("dayStartHour", 8)
         playSounds = value("playSounds", true)
         goToTodayAfterAdding = value("goToTodayAfterAdding", true)
@@ -105,30 +122,48 @@ final class Preferences {
 
     private func save(_ value: Any?, _ key: String) {
         defaults.set(value, forKey: key)
-        onChange()
+        onChange(key)
     }
 
     /// Theme (§12): the whole app follows it, the popovers and Settings included.
     func applyAppearance() {
-        NSApp.appearance = switch appearance {
-        case .system: nil
-        case .light: NSAppearance(named: .aqua)
-        case .dark: NSAppearance(named: .darkAqua)
-        }
+        NSApp.appearance = appearance.nsAppearance
     }
 
-    /// The calendar the grid and the list use: the user's first weekday unless overridden.
-    var calendar: Calendar {
+    /// The calendar the grid and the list use: the user's first weekday unless overridden. Built
+    /// once per change, not per date computation.
+    private(set) var calendar = Calendar.current
+
+    private static func calendar(firstWeekday: Int) -> Calendar {
         var c = Calendar.current
         if firstWeekday != 0 { c.firstWeekday = firstWeekday }
         return c
     }
+
+    /// The system's calendar, locale or time zone changed.
+    func systemCalendarChanged() {
+        calendar = Self.calendar(firstWeekday: firstWeekday)
+    }
 }
 
-extension Font {
-    /// A system font at `size` points scaled by the Text size setting (§12).
-    @MainActor
-    static func ui(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: (size * Preferences.shared.textSize.scale).rounded(), weight: weight)
+extension EnvironmentValues {
+    /// The Text size setting's factor (§12), set at the root of the Mini Window and each popover.
+    @Entry var textScale: CGFloat = 1
+}
+
+/// A system font at `size` points scaled by the environment's text scale.
+private struct UIFont: ViewModifier {
+    @Environment(\.textScale) private var scale
+    let size: CGFloat
+    let weight: Font.Weight
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: (size * scale).rounded(), weight: weight))
+    }
+}
+
+extension View {
+    func uiFont(_ size: CGFloat, weight: Font.Weight = .regular) -> some View {
+        modifier(UIFont(size: size, weight: weight))
     }
 }

@@ -77,7 +77,6 @@ final class AgendaModel {
         didSet { if isVisible && stale { reloadAll() } }
     }
     @ObservationIgnored private var stale = false
-    @ObservationIgnored private var listDaysShown = Preferences.shared.listDays
     @ObservationIgnored private var calendarsByKey: [String: CalendarInfo] = [:]
     @ObservationIgnored private var eventColors: [String: [String: String]] = [:]
     @ObservationIgnored private var searchTask: Task<Void, Never>?
@@ -209,12 +208,9 @@ final class AgendaModel {
     }
 
     /// Settings that change what the grid or the list shows.
-    func settingsChanged() {
-        // a new list length starts the list again; other settings keep how far it has scrolled
-        if prefs.listDays != listDaysShown {
-            listDaysShown = prefs.listDays
-            startList(at: selectedDay)
-        }
+    /// A new list length starts the list again; other settings keep how far it has scrolled.
+    func settingsChanged(restartList: Bool) {
+        if restartList { startList(at: selectedDay) }
         cacheChanged()
     }
 

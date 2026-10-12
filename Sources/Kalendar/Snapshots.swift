@@ -1,5 +1,5 @@
 // `-renderSnapshots <dir>`: renders the Mini Window in light and dark at each text size into PNGs,
-// then quits. The window is a non-activating panel placed off every screen, so checking the UI
+// then quits. The variants are set on the rendered views, never in the user's settings. The window is a non-activating panel placed off every screen, so checking the UI
 // never takes focus from the app the user is in.
 import AppKit
 import SwiftUI
@@ -7,23 +7,18 @@ import SwiftUI
 @MainActor
 enum Snapshots {
     static func render(model: PopoverModel, settings: (Int) -> SettingsView, to directory: String) {
-        let prefs = Preferences.shared
-        let saved = (prefs.textSize, prefs.appearance)
         let url = URL(fileURLWithPath: directory)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         model.willOpen()
         for appearance in [Preferences.Appearance.light, .dark] {
             for size in Preferences.TextSize.allCases {
-                prefs.textSize = size
-                prefs.appearance = appearance
                 let file = url.appendingPathComponent("popover-\(appearance.rawValue.lowercased())-\(size.rawValue.lowercased()).png")
-                write(PopoverRoot(model: model), size: PopoverController.size, appearance: appearance, to: file)
+                write(PopoverRoot(model: model).environment(\.textScale, size.scale),
+                      size: PopoverController.size(scale: size.scale), appearance: appearance, to: file)
             }
         }
-        prefs.textSize = saved.0
-        prefs.appearance = saved.1
-        for tab in 0..<5 {
-            write(settings(tab), size: NSSize(width: 520, height: 460), appearance: .dark,
+        for tab in 0..<SettingsView.tabCount {
+            write(settings(tab), size: SettingsView.size, appearance: .dark,
                   to: url.appendingPathComponent("settings-\(tab).png"))
         }
         for (name, image) in [("date", StatusItemController.glyph(day: 12)),
@@ -43,7 +38,7 @@ enum Snapshots {
     private static func write(_ view: some View, size: NSSize, appearance: Preferences.Appearance, to file: URL) {
         let panel = NSPanel(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: size),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.appearance = NSAppearance(named: appearance == .dark ? .darkAqua : .aqua)
+        panel.appearance = appearance.nsAppearance
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: size)
         panel.contentView = host

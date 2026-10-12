@@ -34,7 +34,7 @@ struct AgendaList: View {
                             }
                             if section.isEmpty {
                                 Text("No events")
-                                    .font(.ui(12))
+                                    .uiFont(12)
                                     .foregroundStyle(Theme.muted)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 6)
@@ -73,7 +73,7 @@ private struct DayHeader: View {
             Text(label).fontWeight(.bold)
             Text(date)
         }
-        .font(.ui(12))
+        .uiFont(12)
         .foregroundStyle(isToday ? Theme.accent : Theme.muted)
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -92,7 +92,7 @@ private struct AllDayPill: View {
 
     var body: some View {
         Text(event.summary)
-            .font(.ui(12, weight: .medium))
+            .uiFont(12, weight: .medium)
             .foregroundStyle(.white)
             .lineLimit(1)
             .padding(.horizontal, 8)
@@ -101,7 +101,7 @@ private struct AllDayPill: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? Theme.accent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .rowSelection(isSelected)
             .padding(.horizontal, 8)
             .accessibilityLabel("All day: \(event.summary)")
             .accessibilityValue(isSelected ? "selected" : "")
@@ -126,22 +126,22 @@ private struct EventRow: View {
                 HStack(spacing: 4) {
                     Text(Preferences.shared.showEventEnds ? Formatting.timeRange(event.start, event.end)
                                                            : event.start.formatted(date: .omitted, time: .shortened))
-                        .font(.ui(12, weight: .medium))
+                        .uiFont(12, weight: .medium)
                         .foregroundStyle(Theme.muted)
                     if event.conferenceURL != nil {
                         Image(systemName: "video.fill")
-                            .font(.ui(9))
+                            .uiFont(9)
                             .foregroundStyle(Theme.muted)
                             .accessibilityLabel("Video call")
                     }
                 }
                 Text(event.summary)
-                    .font(.ui(13))
+                    .uiFont(13)
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
                 if let location = event.location, !location.isEmpty {
                     Text(location)
-                        .font(.ui(11))
+                        .uiFont(11)
                         .foregroundStyle(Theme.muted)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -157,7 +157,7 @@ private struct EventRow: View {
         .opacity(past ? 0.5 : 1)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(isSelected ? Theme.accent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .rowSelection(isSelected)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .background(AnchorView(view: $anchor))
@@ -171,7 +171,7 @@ private struct EventRow: View {
         .accessibilityValue(isSelected ? "selected" : "")
         .accessibilityActions {
             if let link = event.conferenceURL.flatMap(URL.init(string:)) {
-                Button("Join meeting") { NSWorkspace.shared.open(link) }
+                Button("Join \(ConferenceDetector.serviceName(for: link.absoluteString)) Meeting") { NSWorkspace.shared.open(link) }
             }
         }
     }
@@ -181,7 +181,7 @@ private struct EventRow: View {
     @ViewBuilder private var dot: some View {
         let color = model.color(for: event)
         if event.isDeclined {
-            Image(systemName: "circle.slash").font(.ui(9)).foregroundStyle(color).frame(width: 8, height: 8)
+            Image(systemName: "circle.slash").uiFont(9).foregroundStyle(color).frame(width: 8, height: 8)
                 .accessibilityLabel("Declined")
         } else if event.isTentative {
             Circle().strokeBorder(color, lineWidth: 1.5).frame(width: 8, height: 8)
@@ -234,11 +234,27 @@ private struct EventContextMenu: View {
 private struct JoinButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.ui(12, weight: .semibold))
+            .uiFont(12, weight: .semibold)
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
             .background(Theme.accent.opacity(configuration.isPressed ? 0.7 : 1), in: Capsule())
+    }
+}
+
+extension View {
+    /// A selected row's background (§14): the accent at 20% behind it.
+    func rowSelection(_ selected: Bool) -> some View {
+        background(selected ? Theme.accent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// A calendar's color dot (§14).
+struct CalendarDot: View {
+    let hex: String
+
+    var body: some View {
+        Circle().fill(Color(hex: hex)).frame(width: 8, height: 8)
     }
 }
 

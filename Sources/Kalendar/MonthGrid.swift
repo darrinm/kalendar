@@ -15,7 +15,7 @@ struct MonthGrid: View {
             HStack(spacing: 0) {
                 ForEach(weekdaySymbols.indices, id: \.self) { i in
                     Text(weekdaySymbols[i])
-                        .font(.ui(11, weight: .medium))
+                        .uiFont(11, weight: .medium)
                         .foregroundStyle(isTodayColumn(i) ? Theme.accent : Theme.muted)
                         .frame(maxWidth: .infinity)
                 }
@@ -61,7 +61,7 @@ private struct DayCell: View {
         let marks = model.marks[day] ?? DayMarks()
         VStack(spacing: 2) {
             Text("\(calendar.component(.day, from: day))")
-                .font(.ui(13, weight: isToday ? .semibold : .regular))
+                .uiFont(13, weight: isToday ? .semibold : .regular)
                 .foregroundStyle(isToday ? .white : inMonth ? Theme.text : Theme.muted)
                 .frame(width: 24, height: 24)
                 .background {
@@ -76,7 +76,7 @@ private struct DayCell: View {
                     Circle().fill(color).frame(width: 4, height: 4)
                 }
                 if marks.tasks {
-                    Image(systemName: "checkmark").font(.ui(6, weight: .bold)).foregroundStyle(Theme.muted)
+                    Image(systemName: "checkmark").uiFont(6, weight: .bold).foregroundStyle(Theme.muted)
                 }
             }
             .frame(height: 4)

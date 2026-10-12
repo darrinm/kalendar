@@ -24,14 +24,6 @@ final class StatusItemController: NSObject {
         button.action = #selector(clicked)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         redraw()
-        // the countdown and the next event move on each minute, so the timer fires on the minute
-        let nextMinute = Calendar.current.nextDate(after: Date(), matching: DateComponents(second: 0),
-                                                   matchingPolicy: .nextTime) ?? Date().addingTimeInterval(60)
-        let timer = Timer(fire: nextMinute, interval: 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.redraw() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        minuteTimer = timer
         // the day number changes at midnight, when the clock or time zone changes, and across sleep
         let centers: [(NotificationCenter, Notification.Name)] = [
             (.default, .NSCalendarDayChanged), (.default, .NSSystemClockDidChange),
@@ -61,11 +53,13 @@ final class StatusItemController: NSObject {
     func redraw() {
         guard let button = item.button else { return }
         let prefs = Preferences.shared
+        let showsNext = prefs.iconStyle == .nextTitle || prefs.iconStyle == .nextCountdown
+        tickEachMinute(showsNext)
         let now = Date()
         let day = Calendar.current.component(.day, from: now)
         button.image = Self.glyph(day: prefs.iconStyle == .iconOnly ? nil : day, color: prefs.colorIcon)
         var label = "Kalendar, \(now.formatted(date: .complete, time: .omitted))"
-        if prefs.iconStyle == .nextTitle || prefs.iconStyle == .nextCountdown, let next = nextEvent() {
+        if showsNext, let next = nextEvent() {
             let text = Self.title(for: next, countdown: prefs.iconStyle == .nextCountdown, now: now)
             button.title = " " + text
             button.imagePosition = .imageLeading
@@ -75,6 +69,22 @@ final class StatusItemController: NSObject {
             button.imagePosition = .imageOnly
         }
         button.setAccessibilityLabel(label)
+    }
+
+    /// The next-event styles change each minute (the countdown, the event that just ended); the
+    /// date styles change only at midnight, which the observers above cover.
+    private func tickEachMinute(_ on: Bool) {
+        guard on != (minuteTimer != nil) else { return }
+        minuteTimer?.invalidate()
+        minuteTimer = nil
+        guard on else { return }
+        let nextMinute = Calendar.current.nextDate(after: Date(), matching: DateComponents(second: 0),
+                                                   matchingPolicy: .nextTime) ?? Date().addingTimeInterval(60)
+        let timer = Timer(fire: nextMinute, interval: 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.redraw() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        minuteTimer = timer
     }
 
     /// "Standup" or "Standup in 25m" / "Standup now"; long titles are cut to fit the menu bar.

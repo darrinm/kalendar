@@ -80,7 +80,7 @@ struct TaskEditor: View {
             HStack(alignment: .top) {
                 TextField("Title", text: $model.draft.title, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.ui(16, weight: .semibold))
+                    .uiFont(16, weight: .semibold)
                     .foregroundStyle(Theme.text)
                 if let onKind { KindToggle(isTask: true, set: onKind) }
             }
@@ -97,7 +97,7 @@ struct TaskEditor: View {
             }
             if model.timeIgnored {
                 Text("Google Tasks stores dates only")
-                    .font(.ui(11))
+                    .uiFont(11)
                     .foregroundStyle(Theme.muted)
                     .padding(.leading, labelWidth + 8)
             }
@@ -123,7 +123,7 @@ struct TaskEditor: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(Theme.background)
         .tint(Theme.accent)
-        .font(.ui(13))
+        .uiFont(13)
     }
 }
 
@@ -190,7 +190,7 @@ struct TaskRow: View {
         HStack(alignment: .top, spacing: 8) {
             Button { actions.writer.setCompleted(task, !task.completed) } label: {
                 Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
-                    .font(.ui(13))
+                    .uiFont(13)
                     .foregroundStyle(task.completed ? Theme.accent : Theme.muted)
             }
             .buttonStyle(.plain)
@@ -198,11 +198,11 @@ struct TaskRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 if let due = task.due, showsDue || overdue {
                     Text(due.formatted(.dateTime.month(.abbreviated).day()))
-                        .font(.ui(11))
+                        .uiFont(11)
                         .foregroundStyle(overdue ? Theme.wait : Theme.muted)
                 }
                 Text(task.title.isEmpty ? "(No title)" : task.title)
-                    .font(.ui(13))
+                    .uiFont(13)
                     .foregroundStyle(task.completed ? Theme.muted : Theme.text)
                     .strikethrough(task.completed)
                     .lineLimit(2)
@@ -212,8 +212,7 @@ struct TaskRow: View {
         .padding(.leading, CGFloat(depth) * 20)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(actions.agenda.selectedEvent == task.key ? Theme.accent.opacity(0.2) : .clear,
-                    in: RoundedRectangle(cornerRadius: 8))
+        .rowSelection(actions.agenda.selectedEvent == task.key)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .background(AnchorView(view: $anchor))
@@ -266,7 +265,7 @@ struct TasksView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("All Tasks")
-                    .font(.ui(22, weight: .semibold))
+                    .uiFont(22, weight: .semibold)
                     .foregroundStyle(Theme.text)
                 Spacer()
                 Menu {
@@ -290,7 +289,7 @@ struct TasksView: View {
             Theme.line.frame(height: 1)
             if agenda.taskRows.isEmpty {
                 Text(agenda.taskLists.isEmpty ? "No task lists" : "No tasks")
-                    .font(.ui(12))
+                    .uiFont(12)
                     .foregroundStyle(Theme.muted)
                     .padding(16)
             }

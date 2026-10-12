@@ -56,23 +56,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         prefs.applyAppearance()
         statusItem.nextEvent = { [weak self] in self?.nextEventToday() }
         statusItem.redraw()
-        var hotkey = prefs.hotkey
-        prefs.onChange = { [weak self] in
+        prefs.onChange = { [weak self] key in
             guard let self else { return }
-            agenda.settingsChanged()
-            statusItem.redraw()
-            alerts.setNeedsReschedule()
-            if prefs.hotkey != hotkey {
-                hotkey = prefs.hotkey
-                HotkeyCenter.shared.register(hotkey)
+            switch key {
+            case "hotkey": HotkeyCenter.shared.register(prefs.hotkey)
+            case "iconStyle", "colorIcon": statusItem.redraw()
+            case "showAlerts": alerts.setNeedsReschedule()
+            case "listDays": agenda.settingsChanged(restartList: true)
+            case "firstWeekday", "showDeclined", "combineIdentical", "showTasksInList", "showCompletedTasks",
+                 "taskSort", "hiddenTaskLists":
+                agenda.settingsChanged(restartList: false)
+            default: break   // the rest are read when used, or observed by the views
+            }
+        }
+        for name in [NSLocale.currentLocaleDidChangeNotification, .NSSystemTimeZoneDidChange] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { prefs.systemCalendarChanged() }
             }
         }
         _ = UpdaterController.shared   // starts Sparkle's scheduled checks; `shared` is lazy
         LaunchAtLogin.enableOnFirstLaunch()
         startSyncTriggers()
-        // `open Kalendar.app --args -openPopoverAtLaunch YES` opens the popover for UI testing.
-        // Delayed because the status item has no on-screen position yet at launch, and NSPopover
-        // silently refuses to show against it.
+        // `--args -renderSnapshots <dir>` renders the UI off screen and quits (Snapshots.swift)
         if let directory = UserDefaults.standard.string(forKey: "renderSnapshots") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 Snapshots.render(model: model, settings: { [self] tab in
@@ -82,6 +87,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.terminate(nil)
             }
         }
+        // `open Kalendar.app --args -openPopoverAtLaunch YES` opens the popover for UI testing.
+        // Delayed because the status item has no on-screen position yet at launch, and NSPopover
+        // silently refuses to show against it.
         if UserDefaults.standard.bool(forKey: "openPopoverAtLaunch") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.togglePopover() }
         }

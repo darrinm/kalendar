@@ -16,6 +16,8 @@ final class HotkeyCenter {
     var handler: (() -> Void)?
     private var ref: EventHotKeyRef?
     private var handlerInstalled = false
+    /// The last shortcut registered, for `resume`.
+    private var current: Preferences.Hotkey?
 
     /// Registers `hotkey`, replacing the previous one.
     func register(_ hotkey: Preferences.Hotkey) {
@@ -27,8 +29,8 @@ final class HotkeyCenter {
             }, 1, &spec, nil, nil)
             handlerInstalled = true
         }
-        if let ref { UnregisterEventHotKey(ref) }
-        ref = nil
+        suspend()
+        current = hotkey
         let status = RegisterEventHotKey(hotkey.keyCode, hotkey.modifiers,
                                          EventHotKeyID(signature: OSType(0x4B4C4E44), id: 1),   // 'KLND'
                                          GetApplicationEventTarget(), 0, &ref)
@@ -39,6 +41,11 @@ final class HotkeyCenter {
     func suspend() {
         if let ref { UnregisterEventHotKey(ref) }
         ref = nil
+    }
+
+    /// Recording ended: the last shortcut again, unless a new one was registered meanwhile.
+    func resume() {
+        if ref == nil, let current { register(current) }
     }
 }
 
@@ -101,10 +108,11 @@ struct ShortcutRecorder: View {
     @State private var monitor: Any?
 
     var body: some View {
+        let display = prefs.hotkey.display
         HStack {
-            Button(recording ? "Type shortcut…" : prefs.hotkey.display) { recording ? stop() : start() }
+            Button(recording ? "Type shortcut…" : display) { recording ? stop() : start() }
                 .frame(minWidth: 120)
-                .accessibilityLabel(recording ? "Recording shortcut" : "Global shortcut, \(prefs.hotkey.display)")
+                .accessibilityLabel(recording ? "Recording shortcut" : "Global shortcut, \(display)")
             if prefs.hotkey != .standard && !recording {
                 Button("Reset") { prefs.hotkey = .standard }
             }
@@ -142,6 +150,6 @@ struct ShortcutRecorder: View {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         recording = false
-        HotkeyCenter.shared.register(prefs.hotkey)
+        HotkeyCenter.shared.resume()
     }
 }

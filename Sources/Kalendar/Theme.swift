@@ -6,11 +6,11 @@ import SwiftUI
 
 enum Theme {
     /// Buttons, today, the year in the month title, the selected weekday, the Join pill.
-    static let accent = Color(light: 0x00AAFF, dark: 0x33BBFF)
+    static let accent = Color(nsColor: nsAccent)
     /// Accent-colored text on the background: links, and the accent where it is text-sized.
     static let accentInk = Color(light: 0x0077C2, dark: 0x66CCFF)
     /// Popover and window background.
-    static let background = Color(light: 0xF6F8FB, dark: 0x0B1119)
+    static let background = Color(nsColor: nsBackground)
     /// Raised surfaces inside the background: the new-item form, the detail popover's cards.
     static let card = Color(light: 0xFFFFFF, dark: 0x121A25)
     static let text = Color(light: 0x18202B, dark: 0xE6EDF5)

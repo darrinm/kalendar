@@ -295,4 +295,34 @@ final class EventWriterTests: XCTestCase {
         XCTAssertEqual(google.requests.compactMap(\.httpMethod), ["PATCH", "GET"])
         XCTAssertEqual(try cache.pendingWriteCount(), 0)
     }
+
+    func testInsertShowsAPlaceholderUntilGooglesCopyArrives() async throws {
+        let p = NLParser(now: now).parse("Coffee tomorrow 3pm")
+        let draft = EventDraft(parsed: p, account: "me@example.com", calendarId: "primary")
+        google.handler = { _, _ in (200, self.serverEvent("g1", title: "Coffee")) }
+        writer.insert(draft)
+        let placeholders = try cache.events(from: now, to: now.addingTimeInterval(3 * 86400))
+        XCTAssertEqual(placeholders.map(\.summary), ["Coffee"])
+        XCTAssertTrue(placeholders[0].id.hasPrefix("local-"))
+        await writer.flush()
+        let after = try cache.events(from: now.addingTimeInterval(-86400), to: now.addingTimeInterval(3 * 86400))
+        XCTAssertEqual(after.map(\.id), ["g1"], "Google's copy replaces the placeholder")
+        let post = try XCTUnwrap(google.requests.first)
+        XCTAssertEqual(post.httpMethod, "POST")
+        XCTAssertEqual(post.json?["summary"] as? String, "Coffee")
+        XCTAssertEqual((post.json?["reminders"] as? [String: Any])?["useDefault"] as? Bool, true)
+    }
+
+    /// The live form follows new input except where the user changed a field by hand (§5.2).
+    func testLiveFormKeepsHandEdits() {
+        let parser = NLParser(now: now)
+        let first = EventDraft(parsed: parser.parse("Coffee tomorrow"), account: "me@example.com", calendarId: "primary")
+        var form = first
+        form.location = "Blue Bottle"   // typed into the form
+        let second = EventDraft(parsed: parser.parse("Coffee tomorrow 3pm at Ritual"), account: "me@example.com", calendarId: "primary")
+        let next = form.following(second, previousParse: first)
+        XCTAssertEqual(next.location, "Blue Bottle")
+        XCTAssertFalse(next.allDay)
+        XCTAssertEqual(next.start, second.start)
+    }
 }

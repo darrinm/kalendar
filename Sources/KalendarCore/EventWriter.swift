@@ -163,6 +163,22 @@ public final class EventWriter {
         Task { await flush() }
     }
 
+    /// A new event from the input form (§5.4): cached at once under a placeholder id that Google's
+    /// copy replaces when the insert lands. Invitees are emailed (`sendUpdates=all`, §5.1).
+    public func insert(_ draft: EventDraft) {
+        let placeholder = "local-\(UUID().uuidString)"
+        var write = PendingWrite(
+            account: draft.account, calendarId: draft.calendarId, eventId: placeholder, method: "POST",
+            path: GoogleCalendarAPI.eventPath(calendarId: draft.calendarId),
+            query: ["sendUpdates": draft.attendees.count > 1 ? "all" : "none"],
+            body: draft.insertBody(), summary: draft.summary, createdAt: now())
+        write.replaces = placeholder
+        enqueue(write)
+        try? cache.upsert([EventInstance(placeholder: placeholder, draft: draft)])
+        engine.onChange()
+        Task { await flush() }
+    }
+
     /// Duplicate (§7.1): a copy of this occurrence on the same calendar, without its guests.
     public func duplicate(_ event: EventInstance) {
         enqueue(queued("POST", event, id: event.id, insert: true, query: ["sendUpdates": "none"],
@@ -335,6 +351,15 @@ public final class EventWriter {
 }
 
 extension EventInstance {
+    /// A new event as the cache shows it until Google's copy arrives.
+    init(placeholder id: String, draft d: EventDraft) {
+        self.init(account: d.account, calendarId: d.calendarId, id: id, recurringEventId: nil,
+                  summary: "", location: nil, notes: nil, start: d.start, end: d.end, allDay: d.allDay,
+                  transparency: nil, colorId: nil, conferenceURL: nil, selfResponse: nil, organizerSelf: true,
+                  attendees: [], htmlLink: nil, etag: nil, visibility: nil, reminders: Reminders(), timeZone: nil)
+        self = applying(d)
+    }
+
     /// This occurrence with a draft's edits, for the cache until Google's copy arrives.
     func applying(_ d: EventDraft) -> EventInstance {
         var e = self

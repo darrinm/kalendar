@@ -44,6 +44,9 @@ public final class SyncEngine {
     /// includes the write, so the overlay can go.
     @ObservationIgnored private var pendingSelected: [String: (selected: Bool, landedAt: Int?)] = [:]
 
+    /// When each account's contacts were last fetched; contacts refresh at most daily (§18.4).
+    @ObservationIgnored private var contactsSynced: [String: Date] = [:]
+
     static let windowRadius: TimeInterval = 365 * 86400
     static let staleWindow: TimeInterval = 30 * 86400
 
@@ -126,6 +129,8 @@ public final class SyncEngine {
             try cache.replaceEventColors(colors.colors(account: account), account: account)
             wrote = true
         }
+
+        await syncContactsIfStale(account: account)
 
         // calendars sync concurrently, so their requests overlap; a free/busy-only calendar returns
         // no event details, so there is nothing to show for it
@@ -221,6 +226,30 @@ public final class SyncEngine {
             return []
         }
     }
+
+    /// Fetches the account's contacts when they are a day old or Refresh All asked (§18.4). A failure
+    /// only logs: suggestions keep the previous contacts, and calendar sync goes on.
+    private func syncContactsIfStale(account: String) async {
+        if let last = contactsSynced[account], now().timeIntervalSince(last) < 86400 { return }
+        var contacts: [Contact] = []
+        for source in GooglePeopleAPI.Source.allCases {
+            do {
+                contacts += try await pages(GooglePeopleAPI.Page.self, for: account) { source.request(pageToken: $0) }
+                    .flatMap { $0.contacts(account: account) }
+            } catch {
+                // the directory exists only for Workspace accounts; a personal account answers with an error
+                if source != .directory {
+                    Log.sync.error("contacts \(String(describing: source)) failed: \(error.localizedDescription)")
+                    return
+                }
+            }
+        }
+        try? cache.replaceContacts(contacts, account: account)
+        contactsSynced[account] = now()
+    }
+
+    /// Refresh All (⇧⌘R) also refetches contacts.
+    public func forgetContactSync() { contactsSynced = [:] }
 
     /// Replaces a series' cached instances with Google's current ones (after a write to the series).
     public func refreshSeries(_ seriesId: String, account: String, calendarId: String) async {

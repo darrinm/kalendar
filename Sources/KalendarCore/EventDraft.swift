@@ -43,6 +43,39 @@ public struct EventDraft: Equatable {
 
     public var calendarKey: String { "\(account)|\(calendarId)" }
 
+    /// A new event's draft from parsed input (§5): all-day events are free with no alerts (§5.2),
+    /// timed ones busy with the calendar's default alerts unless the text named some.
+    public init(parsed p: ParsedItem, account: String, calendarId: String, timeZone: String = TimeZone.current.identifier) {
+        summary = p.title
+        location = p.location ?? ""
+        notes = ""
+        allDay = p.allDay
+        start = p.start
+        end = p.end
+        self.timeZone = timeZone
+        self.account = account
+        self.calendarId = calendarId
+        colorId = nil
+        busy = !p.allDay
+        visibility = "default"
+        reminders = p.alerts.isEmpty ? Reminders(useDefault: !p.allDay, minutes: [])
+                                     : Reminders(useDefault: false, minutes: p.alerts)
+        recurrence = p.recurrence
+        attendees = []
+    }
+
+    /// The draft for new parsed input, keeping every field the user changed by hand: a field
+    /// whose value still equals the previous parse follows the new parse (§5.2's live form).
+    public func following(_ newParse: EventDraft, previousParse old: EventDraft) -> EventDraft {
+        var d = self
+        func take<T: Equatable>(_ key: WritableKeyPath<EventDraft, T>) {
+            if self[keyPath: key] == old[keyPath: key] { d[keyPath: key] = newParse[keyPath: key] }
+        }
+        take(\.summary); take(\.location); take(\.allDay); take(\.start); take(\.end); take(\.account)
+        take(\.calendarId); take(\.busy); take(\.reminders); take(\.recurrence); take(\.attendees)
+        return d
+    }
+
     /// The patch body for what differs from `original`, or nil when nothing does.
     ///
     /// `seriesTimes` is the master event's start and end when the edit applies to all occurrences

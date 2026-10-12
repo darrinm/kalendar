@@ -18,6 +18,7 @@ let package = Package(
             name: "Kalendar",
             dependencies: ["KalendarCore", .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/Kalendar"),
-        .testTarget(name: "KalendarCoreTests", dependencies: ["KalendarCore"], path: "Tests/KalendarCoreTests"),
+        .testTarget(name: "KalendarCoreTests", dependencies: ["KalendarCore"], path: "Tests/KalendarCoreTests",
+                    resources: [.copy("Fixtures")]),
     ]
 )

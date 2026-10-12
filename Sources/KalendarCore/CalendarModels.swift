@@ -164,3 +164,20 @@ public struct PendingWrite: Codable, Equatable, FetchableRecord, MutablePersista
         self.createdAt = createdAt
     }
 }
+
+/// A person for invitee suggestions (§18.4).
+public struct Contact: Codable, Equatable, Hashable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "contact"
+    /// The signed-in account the contact came from; empty for an attendee found in cached events.
+    public var account: String
+    public var email: String
+    public var name: String?
+    public var photoURL: String?
+
+    public init(account: String, email: String, name: String?, photoURL: String?) {
+        self.account = account
+        self.email = email
+        self.name = name
+        self.photoURL = photoURL
+    }
+}

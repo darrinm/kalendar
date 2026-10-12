@@ -25,7 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let agenda = AgendaModel(cache: cache, engine: engine)
         let model = PopoverModel(accounts: accounts, agenda: agenda, writer: writer, signIn: signIn,
                                  showSettings: { [weak self] in self?.showSettings() },
-                                 refresh: { [weak self] in self?.sync() })
+                                 refresh: { [weak self] in
+                                     self?.engine.forgetContactSync()   // Refresh All refetches contacts too (§18.4)
+                                     self?.sync()
+                                 })
         popover = PopoverController(model: model)
         popover.onOpen = { [weak self] in self?.syncIfNeeded(maxAge: 30) }
         statusItem = StatusItemController(

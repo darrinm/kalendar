@@ -210,7 +210,7 @@ The title in the form updates live as the parser strips recognised tokens (e.g. 
 - Recurrence: `every day/week/month/year`, `every <weekday>`, `every weekday`, `<weekday>s and <weekday>s`, `every other <unit>`, `every N <unit>s`, `until <date>`, `for N times`.
 - `alert <n> (min|hours|days)`, `alert at <time>`; multiple alerts allowed.
 - `/calendarPrefix`, `with <contact>`, `at <location>`, `todo|task|reminder|√` prefix, quoted literals, `all day`. (No `!` priority; see §5.2.)
-- Test corpus: the §5.2 table plus the example sentences from the reference app's documentation. Those sentences are not in this spec yet; collect them into `Tests/NLParserTests/Fixtures` before milestone 4.
+- Test corpus: the §5.2 table plus Kalendar's own example sentences in `Tests/KalendarCoreTests/Fixtures/nl-corpus.json` (written for Kalendar rather than copied from the reference app's documentation).
 - Implementation **[decision]**: hand‑written tokenizer + rule parser in Swift (deterministic, offline, instant). `NSDataDetector` can seed date/time spans but does not cover recurrence/duration. LLM parsing is explicitly not used.
 
 ### 5.4 Commit

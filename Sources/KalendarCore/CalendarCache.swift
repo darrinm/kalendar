@@ -356,6 +356,18 @@ public final class CalendarCache: @unchecked Sendable {
         return Set(matches.map { $0.email.lowercased() }).count == 1 ? matches[0].email : nil
     }
 
+    /// Locations of past events that contain `query`, most recent first (§5.2: "previous
+    /// locations first").
+    public func recentLocations(matching query: String, limit: Int = 3) throws -> [String] {
+        let like = "%\(query.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_"))%"
+        return try db.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT location FROM event WHERE location LIKE ? ESCAPE '\\' AND location NOT LIKE 'http%'
+                GROUP BY location ORDER BY MAX(start) DESC LIMIT ?
+                """, arguments: [like, limit])
+        }
+    }
+
     // MARK: Write queue (§18.3)
 
     public func enqueue(_ write: PendingWrite) throws {

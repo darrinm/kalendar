@@ -1,5 +1,5 @@
 // The detail popover's state (§6): the event, its draft, and what closing the popover does with
-// the edits (§8.1).
+// the edits (§8.1). The new-item form (§5) uses it too, for an event that doesn't exist yet.
 import AppKit
 import KalendarCore
 import Observation
@@ -15,8 +15,11 @@ final class EventEditorModel {
     /// The master event, loaded for a recurring occurrence (rule, times, etag).
     private(set) var series: EventWriter.Series?
     var expanded = false
+    /// The new-item form: `draft` follows the parsed input until it is added (§5).
+    let isNew: Bool
 
     init(event: EventInstance, agenda: AgendaModel, writer: EventWriter) {
+        isNew = false
         self.event = event
         self.agenda = agenda
         self.writer = writer
@@ -28,6 +31,28 @@ final class EventEditorModel {
         if event.recurringEventId != nil && !event.isInvitation {
             Task { await loadSeries() }
         }
+    }
+
+    /// The new-item form for a draft parsed from the input.
+    init(newDraft draft: EventDraft, agenda: AgendaModel, writer: EventWriter) {
+        isNew = true
+        event = EventInstance(placeholder: "", draft: draft)
+        self.agenda = agenda
+        self.writer = writer
+        original = draft
+        self.draft = draft
+        writer.clearError()
+    }
+
+    /// The input changed: fields the user hasn't edited by hand take the new parse (§5.2).
+    func follow(_ parsed: EventDraft) {
+        draft = draft.following(parsed, previousParse: original)
+        original = parsed
+    }
+
+    /// Adds the new event (§5.4).
+    func add() {
+        writer.insert(draft)
     }
 
     private func loadSeries() async {

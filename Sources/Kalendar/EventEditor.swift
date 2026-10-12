@@ -5,6 +5,8 @@ import SwiftUI
 
 struct EventEditor: View {
     @Bindable var model: EventEditorModel
+    /// The new-item form's Add Event button (§5.1); nil for an existing event.
+    var onAdd: (() -> Void)?
 
     private var readOnly: Bool { model.isInvitation }
 
@@ -20,13 +22,23 @@ struct EventEditor: View {
                     RSVPButtons { model.respond($0) }.padding(.top, 6)
                 }
                 if !readOnly {
-                    Button { model.expanded.toggle() } label: {
-                        Image(systemName: model.expanded ? "chevron.up" : "chevron.down")
-                            .foregroundStyle(Theme.muted)
-                            .frame(width: 24, height: 18)
+                    HStack {
+                        Button { model.expanded.toggle() } label: {
+                            Image(systemName: model.expanded ? "chevron.up" : "chevron.down")
+                                .foregroundStyle(Theme.muted)
+                                .frame(width: 24, height: 18)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(model.expanded ? "Fewer fields" : "More fields")
+                        if let onAdd {
+                            Spacer()
+                            Button("Add Event", action: onAdd)
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.draft.summary.trimmingCharacters(in: .whitespaces).isEmpty)
+                            Spacer()
+                            Color.clear.frame(width: 24, height: 18)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(model.expanded ? "Fewer fields" : "More fields")
                 }
             }
             .padding(16)
@@ -51,7 +63,7 @@ struct EventEditor: View {
                 .textFieldStyle(.plain)
                 .foregroundStyle(Theme.muted)
                 .disabled(readOnly)
-            if let link = model.event.conferenceURL, let url = URL(string: link) {
+            if !model.isNew, let link = model.event.conferenceURL, let url = URL(string: link) {
                 Button("Join \(ConferenceDetector.serviceName(for: link)) Meeting") { NSWorkspace.shared.open(url) }
                     .buttonStyle(.borderedProminent)
                     .padding(.top, 4)

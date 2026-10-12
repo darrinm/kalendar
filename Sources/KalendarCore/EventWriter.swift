@@ -352,7 +352,7 @@ public final class EventWriter {
 
 extension EventInstance {
     /// A new event as the cache shows it until Google's copy arrives.
-    init(placeholder id: String, draft d: EventDraft) {
+    public init(placeholder id: String, draft d: EventDraft) {
         self.init(account: d.account, calendarId: d.calendarId, id: id, recurringEventId: nil,
                   summary: "", location: nil, notes: nil, start: d.start, end: d.end, allDay: d.allDay,
                   transparency: nil, colorId: nil, conferenceURL: nil, selfResponse: nil, organizerSelf: true,

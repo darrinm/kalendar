@@ -25,4 +25,15 @@ enum Dialogs {
         default: return nil
         }
     }
+
+    /// §8.3: "You're about to discard this item." Returns true for Discard.
+    static func confirmDiscard() -> Bool {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "You're about to discard this item."
+        alert.informativeText = "Are you sure you want to close and discard your information? You can't undo this action."
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
 }

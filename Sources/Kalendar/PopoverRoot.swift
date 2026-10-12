@@ -21,20 +21,31 @@ struct PopoverRoot: View {
                 AccountNotices(model: model)
             }
 
-            if agenda.searchMode {
-                Theme.line.frame(height: 1)
-                AgendaList(model: agenda, sections: agenda.searchResults, extendsAtEnd: false, actions: model)
-            } else {
-                MonthHeader(model: model)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
-                MonthGrid(model: agenda)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 4)
-                SyncNotice(engine: agenda.engine)
-                WriteErrorNotice(writer: model.writer)
-                Theme.line.frame(height: 1)
-                AgendaList(model: agenda, sections: agenda.sections, extendsAtEnd: true, actions: model)
+            ZStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if agenda.searchMode {
+                        Theme.line.frame(height: 1)
+                        AgendaList(model: agenda, sections: agenda.searchResults, extendsAtEnd: false, actions: model)
+                    } else if let form = model.newItem.form, !model.input.isEmpty {
+                        // the new-item form, live as the input changes (§5)
+                        Theme.line.frame(height: 1)
+                        EventEditor(model: form, onAdd: model.addNewItem)
+                    } else {
+                        MonthHeader(model: model)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 6)
+                        MonthGrid(model: agenda, onDoubleClick: model.startNewItem)
+                            .padding(.horizontal, 10)
+                            .padding(.bottom, 4)
+                        SyncNotice(engine: agenda.engine)
+                        WriteErrorNotice(writer: model.writer)
+                        Theme.line.frame(height: 1)
+                        AgendaList(model: agenda, sections: agenda.sections, extendsAtEnd: true, actions: model)
+                    }
+                }
+                if model.newItem.showsSuggestions {
+                    SuggestionList(model: model)
+                }
             }
 
             Spacer(minLength: 0)
@@ -80,7 +91,7 @@ struct PopoverRoot: View {
                 .onExitCommand { model.escape() }
                 .accessibilityLabel(searching ? "Search" : "New event or task")
             if searching || !model.input.isEmpty {
-                Button { if searching { model.toggleSearch() } else { model.input = "" } } label: {
+                Button { if searching { model.toggleSearch() } else { model.cancelNewItem() } } label: {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(.borderless)
@@ -314,5 +325,79 @@ private struct CalendarsMenu: View {
         }
         .fixedSize()
         .accessibilityLabel("Calendars")
+    }
+}
+
+/// The suggestion list under the input (§5.2): calendars, people or places for the token being typed.
+private struct SuggestionList: View {
+    let model: PopoverModel
+
+    private var newItem: NewItemModel { model.newItem }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+            ForEach(Array(newItem.suggestions.enumerated()), id: \.element.id) { index, suggestion in
+                row(suggestion)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(index == newItem.selected ? Theme.accent.opacity(0.25) : .clear,
+                                in: RoundedRectangle(cornerRadius: 6))
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.input = newItem.accept(index, in: model.input) }
+                    .padding(.horizontal, 4)
+            }
+        }
+        .padding(.bottom, 6)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
+        .padding(.horizontal, 8)
+        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+    }
+
+    private var title: String {
+        switch newItem.trigger?.kind {
+        case .calendar: "CALENDARS"
+        case .contact: "CONTACTS"
+        default: "LOCATION SUGGESTIONS"
+        }
+    }
+
+    @ViewBuilder private func row(_ s: Suggestion) -> some View {
+        switch s {
+        case .calendar(let c):
+            HStack(spacing: 8) {
+                Circle().fill(Color(hex: c.backgroundColor)).frame(width: 8, height: 8)
+                Text(c.summary).foregroundStyle(Theme.text)
+                Text(c.account).foregroundStyle(Theme.muted).lineLimit(1)
+            }
+            .font(.system(size: 13))
+        case .contact(let c):
+            HStack(spacing: 8) {
+                Text(String((c.name ?? c.email).prefix(1)).uppercased())
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(width: 24, height: 24)
+                    .background(Theme.line, in: Circle())
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(c.name ?? c.email).font(.system(size: 13)).foregroundStyle(Theme.text)
+                    if c.name != nil { Text(c.email).font(.system(size: 11)).foregroundStyle(Theme.muted) }
+                }
+            }
+        case .place(let title, let subtitle):
+            HStack(spacing: 8) {
+                Image(systemName: "mappin.circle.fill").foregroundStyle(Theme.bad)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
+                    if !subtitle.isEmpty { Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1) }
+                }
+            }
+        }
     }
 }

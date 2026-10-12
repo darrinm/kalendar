@@ -48,6 +48,7 @@ struct SettingsView: View {
                 .tabItem { Label("Calendars", systemImage: "calendar") }
         }
         .frame(width: 480, height: 320)
+        .tint(Theme.accent)
     }
 }
 

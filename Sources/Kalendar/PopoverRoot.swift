@@ -13,6 +13,7 @@ struct PopoverRoot: View {
             TextField("", text: $model.input)
                 .textFieldStyle(.plain)
                 .font(.system(size: 17))
+                .foregroundStyle(Theme.text)
                 .focused($inputFocused)
                 .onExitCommand { model.escape() }
                 .accessibilityLabel("New event or task")
@@ -24,7 +25,7 @@ struct PopoverRoot: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
 
-            Divider()
+            Theme.line.frame(height: 1)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -34,7 +35,7 @@ struct PopoverRoot: View {
             }
 
             Spacer(minLength: 0)
-            Divider()
+            Theme.line.frame(height: 1)
             HStack {
                 Spacer()
                 Button {
@@ -42,6 +43,7 @@ struct PopoverRoot: View {
                 } label: {
                     Image(systemName: "gearshape")
                         .font(.system(size: 15))
+                        .foregroundStyle(Theme.muted)
                         .frame(width: 30, height: 30)
                 }
                 .buttonStyle(.borderless)
@@ -53,21 +55,23 @@ struct PopoverRoot: View {
             .padding(.vertical, 8)
         }
         .frame(width: PopoverController.size.width, height: PopoverController.size.height)
+        .background(Theme.background)
+        .tint(Theme.accent)
         .onChange(of: model.focusRequest) { inputFocused = true }
         .onAppear { inputFocused = true }
     }
 }
 
-/// "Oct 2026": month in the primary color, year in the red accent (§4.2, §14).
+/// "Oct 2026": month in the text color, year in the accent (§4.2, §14).
 struct MonthTitle: View {
     let date: Date
 
     var body: some View {
         HStack(spacing: 6) {
             Text(date.formatted(.dateTime.month(.abbreviated)))
-                .foregroundStyle(.primary)
+                .foregroundStyle(Theme.text)
             Text(date.formatted(.dateTime.year()))
-                .foregroundStyle(Color(red: 1, green: 0.27, blue: 0.23))
+                .foregroundStyle(Theme.accent)
         }
         .font(.system(size: 26, weight: .semibold))
     }
@@ -104,9 +108,10 @@ private struct NoticeRow: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(text)
                 .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
             Button(button, action: action)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
         }
         .padding(16)
@@ -124,8 +129,8 @@ private struct AccountRow: View {
             model.showDetail(anchor, AnyView(AccountDetail(email: email, model: model)))
         } label: {
             HStack(spacing: 8) {
-                Circle().fill(Color.accentColor).frame(width: 8, height: 8)
-                Text(email).font(.system(size: 13))
+                Circle().fill(Theme.accent).frame(width: 8, height: 8)
+                Text(email).font(.system(size: 13)).foregroundStyle(Theme.text)
                 Spacer()
             }
             .contentShape(Rectangle())
@@ -145,11 +150,12 @@ private struct AccountDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(email).font(.system(size: 15, weight: .semibold))
-            Text(calendars).font(.system(size: 13)).foregroundStyle(.secondary)
+            Text(email).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+            Text(calendars).font(.system(size: 13)).foregroundStyle(Theme.muted)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.background)
         .task { calendars = await model.accounts.calendarCountText(for: email) }
     }
 }

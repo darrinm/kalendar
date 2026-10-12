@@ -39,6 +39,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         NSApp.activate(ignoringOtherApps: true)
         anchor = button
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        Self.paintFrame(of: popover)
         popover.contentViewController?.view.window?.makeKey()
         model.focusInput()
     }
@@ -55,7 +56,19 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         child.contentViewController = NSHostingController(rootView: content.frame(width: 300))
         // to the left of the Mini Window (§6); AppKit flips it to the right when there is no room
         child.show(relativeTo: view.bounds, of: view, preferredEdge: .minX)
+        Self.paintFrame(of: child)
         detail = child
+    }
+
+    /// NSPopover draws its own frame, arrow included, in the system popover material. Putting a
+    /// view in the theme background behind the content view recolors the whole shape, so the arrow
+    /// matches the content instead of showing the material.
+    private static func paintFrame(of popover: NSPopover) {
+        guard let frame = popover.contentViewController?.view.window?.contentView?.superview,
+              !frame.subviews.contains(where: { $0 is PopoverBackgroundView }) else { return }
+        let background = PopoverBackgroundView(frame: frame.bounds)
+        background.autoresizingMask = [.width, .height]
+        frame.addSubview(background, positioned: .below, relativeTo: nil)
     }
 
     /// A transient popover closes on mouse-down outside itself. For a mouse-down on the status item,
@@ -99,5 +112,23 @@ final class PopoverModel {
     /// Esc: clears the input if it has text, otherwise closes the popover (§4).
     func escape() {
         if input.isEmpty { close() } else { input = "" }
+    }
+}
+
+private final class PopoverBackgroundView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used from a nib") }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        // resolved here, inside the view's appearance, so light and dark both update
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = Theme.nsBackground.cgColor
+        }
     }
 }

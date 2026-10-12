@@ -86,27 +86,27 @@ Behaviors:
 - On close, if the user navigated away from today, reset to today on next open. **[decision]** This is a fixed behavior, separate from the "Go to today after adding items" setting (§5.4), which only applies after a commit.
 
 ### 4.1 Input row
-- Placeholder‑less text field; blue caret.
+- Placeholder‑less text field; accent‑colored caret (§14).
 - `˅` button to the right: opens the **templates** panel. [out of scope — user confirmed they don't use templates; omit the button entirely]
 - 🔍 button: switches the field into **search** mode (see §9).
 - While text is present an `×` clear button appears between the field and 🔍; it cancels the draft (with the discard dialog in §8.3 if the form was hand‑edited).
 
 ### 4.2 Month mini‑calendar
-- Title "Sep **2026**" — month in white, year in red accent. Invitation badge (red circle with count of pending invites) next to the title; hidden when zero. Clicking it opens the **Notifications popover** (§6.2). `‹ ›` step months.
-- 7 columns SUN…SAT, header for the current weekday in green. Six rows always; leading/trailing days from adjacent months dimmed.
-- Today: green filled circle. Selected day (when ≠ today): white/blue filled circle; the selected row gets a subtle highlight band. While an agenda row on today is selected, today's circle uses the light‑blue selection color instead of green.
-- Under each day: up to 4 small dots, one per event, colored by calendar; a `✓` glyph if a task is due; a red dot for a declined/unavailable item. **[decision]** cap at 4 dots, then "…".
+- Title "Sep **2026**" — month in `text`, year in `accent` (§14). Invitation badge (`bad` circle with count of pending invites) next to the title; hidden when zero. Clicking it opens the **Notifications popover** (§6.2). `‹ ›` step months.
+- 7 columns SUN…SAT, header for the current weekday in `accent`. Six rows always; leading/trailing days from adjacent months dimmed.
+- Today: `accent` filled circle. Selected day (when ≠ today): `accent` ring; the selected row gets a subtle highlight band. While an agenda row on today is selected, today's circle uses the selection color instead of the filled `accent`.
+- Under each day: up to 4 small dots, one per event, colored by calendar; a `✓` glyph if a task is due; a `bad` dot for a declined/unavailable item. **[decision]** cap at 4 dots, then "…".
 - Click a day → the agenda list **smooth‑scrolls** (animated, ~0.3 s) so that day's section header lands at the top of the list; the day becomes the selected day. Days with no events still get a header ("No events" placeholder row) so the scroll target always exists. **[decision]** Scrolling the list manually does not change the selected day.
 - **Double‑click a day** → starts a new entry pre‑dated to that day (input gets focus, form shows that date).
 - Keyboard: `←/→` month, `⇧←/⇧→` day, `⇧↑/⇧↓` week, `⌘T` today.
 
 ### 4.3 Agenda list
-- Sectioned by day. Header: `TODAY 9/21/26` (green), `TOMORROW 9/22/26`, then weekday + date (`WEDNESDAY 9/23/26`). Weather in the header is premium — omit.
+- Sectioned by day. Header: `TODAY 9/21/26` (`accent`), `TOMORROW 9/22/26`, then weekday + date (`WEDNESDAY 9/23/26`). Weather in the header is premium — omit.
 - Row layout: colored dot (calendar color; open circle = tentative/not-accepted; `⊘` = declined) · time range `9:00 – 10:00 AM` (end time shown because "Show when events end" is on) · optional 📹 glyph when a conference URL is detected · title on line 2 · location/URL on line 3 in dimmer text, single‑line, truncated.
 - All‑day events are pinned at the top of their day section, directly under the header, as rounded pills filled with the calendar (or event) color, title only, no dot or time (observed: "Columbus Day" in yellow on the US Holidays calendar, 2026‑10‑12).
-- An incomplete task whose due date has passed is shown in today's section, with its due date in red above the title (observed in the reference app: "Sep 28 at 9:00 AM" on 10/12). Kalendar shows the date only ("Sep 28"), because Google Tasks stores no time.
+- An incomplete task whose due date has passed is shown in today's section, with its due date in `wait` above the title (observed in the reference app: "Sep 28 at 9:00 AM" on 10/12). Kalendar shows the date only ("Sep 28"), because Google Tasks stores no time.
 - Past events today are dimmed (observed: events before now are grey; current/next are full white).
-- The current or next event with a detected conference URL shows a blue **Join** pill at the trailing edge; clicking opens the URL. **[decision]** "Current or next" means the event is in progress or starts within 15 minutes; only one row shows the pill at a time. Conference URL sources, in order: the event's `conferenceData.entryPoints` entry with `entryPointType == "video"`, then `hangoutLink`, then a regex match for Zoom (`zoom.us/j/`), Google Meet, Teams, Webex, and FaceTime links in `location` and `description`.
+- The current or next event with a detected conference URL shows an `accent` **Join** pill at the trailing edge; clicking opens the URL. **[decision]** "Current or next" means the event is in progress or starts within 15 minutes; only one row shows the pill at a time. Conference URL sources, in order: the event's `conferenceData.entryPoints` entry with `entryPointType == "video"`, then `hangoutLink`, then a regex match for Zoom (`zoom.us/j/`), Google Meet, Teams, Webex, and FaceTime links in `location` and `description`.
 - "List shows: All Days" → list is effectively infinite scroll forward. Load ±N months lazily. **[decision]** initial window: today → +60 days, extend on scroll.
 - Combine identical events (same title, start, end, location across calendars) into one row.
 - Single‑click a row → selects it and opens the **detail popover** (§6). Double‑click → same. `⌘E` toggles the popover for the selection.
@@ -170,9 +170,9 @@ show as   Busy
  ˅                     [ Add Event ]
 ```
 
-Clicking `˅` expands to the **full form**, which inserts: `time zone` (after ends), `repeat` + `repeat end` (after color), `travel time` (omit), `visibility`, then hairline‑separated sections: ☐ RSVP event link with a grey explainer (omit), **Add Invitees**, ☐ Google Meet with logo (omit v1), Add Attachment… (omit), **Add Notes** text area (green caret when focused). Button becomes `˄`; the form scrolls within the popover, thin scrollbar at the right edge.
+Clicking `˅` expands to the **full form**, which inserts: `time zone` (after ends), `repeat` + `repeat end` (after color), `travel time` (omit), `visibility`, then hairline‑separated sections: ☐ RSVP event link with a grey explainer (omit), **Add Invitees**, ☐ Google Meet with logo (omit v1), Add Attachment… (omit), **Add Notes** text area (`accent` caret when focused). Button becomes `˄`; the form scrolls within the popover, thin scrollbar at the right edge.
 
-**Add Invitees**: clicking turns the row into a text field; typing (`bob`) drops a contact list over the rest of the form — avatar photo or initials, name, email; the same person appears once per email address, with a disambiguator in the name when needed ("Bob Day (gmail)"). First match highlighted green; Enter/click adds a chip and clears the field for the next invitee. Source: the Google People API for both accounts (§18.4) plus attendee addresses from events in the local cache. Saving writes the event's `attendees` array; new invitees are emailed by Google with `sendUpdates=all`.
+**Add Invitees**: clicking turns the row into a text field; typing (`bob`) drops a contact list over the rest of the form — avatar photo or initials, name, email; the same person appears once per email address, with a disambiguator in the name when needed ("Bob Day (gmail)"). First match highlighted with the selection color; Enter/click adds a chip and clears the field for the next invitee. Source: the Google People API for both accounts (§18.4) plus attendee addresses from events in the local cache. Saving writes the event's `attendees` array; new invitees are emailed by Google with `sendUpdates=all`.
 
 Task form — toggle with the `▣ | ✓` segmented button in the form header, or type a `todo`/`task`/`reminder`/`√` prefix. (⌘K is documented as the toggle but **does nothing in the Mini Window** — observed; don't rely on it.)
 
@@ -216,13 +216,13 @@ The title in the form updates live as the parser strips recognised tokens (e.g. 
 ### 5.4 Commit
 - Enter or **Add Event / Add Task** → `events.insert` / `tasks.insert`, play the UI confirmation sound (setting on), clear the input, close the form, and — because "Go to today after adding items" is on — return the list to today after ~2 s unless the user interacts.
 - The new item appears in the list immediately (optimistic insert into the cache). If the write is offline it is queued (§18.3).
-- Errors (calendar `accessRole` is `reader` or `freeBusyReader`, API error) → inline red text under the form.
+- Errors (calendar `accessRole` is `reader` or `freeBusyReader`, API error) → inline `bad` text under the form.
 
 ---
 
 ## 6. Detail / edit popover (existing item)
 
-Single‑click a list row → the row highlights light‑blue and a second popover (~300 pt wide, same translucent material) opens **to the left of the Mini Window**, its arrow pointing right at the selected row (observed; it flips to the right side if there's no room). Its height grows with content — an invitation with 11 attendees and long notes ran nearly the full screen height, while a plain event is a compact card ending at the `˅` expander. It is **directly editable** — same layout as the new‑item form, values pre‑filled, no separate "edit mode". Changes save on popover close (Esc/click‑out) **[decision]**; the reference app autosaves the same way.
+Single‑click a list row → the row gets the selection color (§14) and a second popover (~300 pt wide, same `background`) opens **to the left of the Mini Window**, its arrow pointing right at the selected row (observed; it flips to the right side if there's no room). Its height grows with content — an invitation with 11 attendees and long notes ran nearly the full screen height, while a plain event is a compact card ending at the `˅` expander. It is **directly editable** — same layout as the new‑item form, values pre‑filled, no separate "edit mode". Changes save on popover close (Esc/click‑out) **[decision]**; the reference app autosaves the same way.
 
 Collapsed content observed (Workout, weekly):
 ```
@@ -244,19 +244,19 @@ Expanded (`˅`) adds: time zone, travel time (omit), Add Invitees, Google Meet t
 
 For an **invitation** (observed on an interview invitation in the Mini Window): title, "Add Location", fields (all‑day, starts, ends, calendar, color, travel time, alert ⊕, show as, visibility — note: no repeat rows for a one‑off, and the field set is the collapsed one; no `˅` expander on invitations), then:
 - **Attendee list**, one per line, status icon + name/email + role suffix:
-  - green circle ✓ = accepted · red circle ✗ = declined · orange circle ? = tentative/maybe · grey outlined ? = no reply
+  - `ok` circle ✓ = accepted · `bad` circle ✗ = declined · `wait` circle ? = tentative/maybe · `muted` outlined ? = no reply
   - name shown as contact name when matched (e.g. "Alex Kim", with a small Slack glyph when the contact came from Slack) otherwise the email
   - suffix `(organizer)`, `(optional)`, `(me, optional)`; required attendees have no suffix
 - "Add Invitees" link
-- separator, then **Propose New Time** (green, with icon) — premium/scheduling, omit
-- separator, then **notes body** as plain text with auto‑detected links underlined in green (links may be Google‑wrapped `google.com/url?q=` redirectors — unwrap `q=` for display and open the target directly)
+- separator, then **Propose New Time** (with icon) — premium/scheduling, omit
+- separator, then **notes body** as plain text with auto‑detected links underlined in `accentInk` (links may be Google‑wrapped `google.com/url?q=` redirectors — unwrap `q=` for display and open the target directly)
 - "Add Comment" field (writes the attendee comment on RSVP; **[decision]** omit in v1. The API supports it as `attendees[].comment`, so it can return in v2.)
 - bottom button row **Maybe / Decline / Accept** — grey pills, Maybe at leading edge, Decline and Accept trailing.
 
 Accept/Decline/Maybe set `responseStatus` to `tentative` / `declined` / `accepted` on the attendee with `self == true`, via `events.patch` with `sendUpdates=all` so the organizer is notified. `patch` replaces arrays, so the request sends the full `attendees` array with only the user's entry changed. For a recurring event, the response applies to the instance unless the user picks "All" in the §8.1 dialog. After a response the row's dot in the agenda list changes from outlined to filled and the item leaves the Notifications popover (§6.2).
 
 ### 6.1 Field editors observed
-- **starts / ends date**: click → inline **date picker** popover: "Sep 2026" header with `◂ ● ▸`, 7‑col grid, today green.
+- **starts / ends date**: click → inline **date picker** popover: "Sep 2026" header with `◂ ● ▸`, 7‑col grid, today in `accent`.
 - **time**: click → editable text with `↑↓` stepping (15‑min increments). **[decision]**
 - **calendar**: click → menu grouped by account name (grey header) with color dots: `Google › darrin@massena.com ✓, 3D Car Simulator, 3D Car Simulator Widget, test`; `Darrin Massena › darrin@playful.software, Playful Shared Calendar`. Only calendars with `accessRole` `writer` or `owner` are listed. Moving an event to a calendar in the same account uses `events.move`. Moving it to the other account is insert‑then‑delete and is allowed only for events the user organizes. **[decision]**
 - **color**: popup `None` (use the calendar's color) plus Google's 11 event colors from `colors.get` (`event` palette), written as `colorId`.
@@ -271,7 +271,7 @@ Accept/Decline/Maybe set `responseStatus` to `tentative` / `declined` / `accepte
 
 ### 6.2 Notifications popover (pending invitations) — observed
 
-Opened by clicking the red count badge beside the month title. A rounded card (~285 pt wide) with an arrow pointing up at the badge, overlaying the calendar grid.
+Opened by clicking the `bad` count badge beside the month title. A rounded card (~285 pt wide) with an arrow pointing up at the badge, overlaying the calendar grid.
 
 ```
             Notifications                    (⋯)
@@ -339,7 +339,7 @@ v1 keeps: Go to Previous/Next Occurrence, Join <Service> Meeting, Color ›, Sho
 ## 8. Dialogs (all observed; replicate as `NSAlert`‑style sheets or centered panels)
 
 ### 8.1 Delete a recurring event
-Centered panel, app icon, bold title **"You're responding to a repeating event."**, body "Do you want to respond to only this occurrence of the event, or all occurrences?", buttons stacked: **Only This Event** (green, default) / **All** / **Cancel**. Same dialog for edits and RSVPs on a recurring event.
+Centered panel, app icon, bold title **"You're responding to a repeating event."**, body "Do you want to respond to only this occurrence of the event, or all occurrences?", buttons stacked: **Only This Event** (`accent`, default) / **All** / **Cancel**. Same dialog for edits and RSVPs on a recurring event.
 
 API mapping: **Only This Event** patches or deletes the instance (its `id` is the instance id; deleting it records a cancelled exception). **All** patches or deletes the master event (`recurringEventId`). A time change applied to All shifts the master's `start`/`end` by the same offset the user applied to the instance.
 
@@ -349,7 +349,7 @@ Because the detail popover saves on close (§6), the dialog is shown when the us
 No confirmation in the reference app (undo via ⌘Z). **[decision]** v1: no confirmation, offer Undo via `⌘Z` within the session. Undo is offered only for events the user organizes. It restores the event by patching the deleted (now `status: "cancelled"`) event back to `status: "confirmed"`. If Google rejects that, Undo inserts a copy from the cache as a new event, without re‑sending invitations. Verify the patch behavior in milestone 3. Deleting an invitation the user didn't organize removes it only from the user's calendar; that action has no undo.
 
 ### 8.3 Discard a new item
-Shown when cancelling a new‑item form that has been edited by hand (not when the only content is the NL text): **"You're about to discard this item."** / "Are you sure you want to close and discard your information? You can't undo this action." / **Cancel** · **Discard** (green, default).
+Shown when cancelling a new‑item form that has been edited by hand (not when the only content is the NL text): **"You're about to discard this item."** / "Are you sure you want to close and discard your information? You can't undo this action." / **Cancel** · **Discard** (`accent`, default).
 
 ### 8.4 Premium upsell
 The reference app shows upsell messages for its paid features. Not applicable.
@@ -453,11 +453,28 @@ Persist with `UserDefaults`; the observed values in §2 are the defaults.
 
 ## 14. Visual details
 
-- Dark theme: background `#1E1E1E`‑ish translucent (`NSVisualEffectView .popover`), primary text white, secondary `#9A9A9A`, accent green `#34C759` for today/CTA buttons, red `#FF453A` for the year and invite badge, blue `#0A84FF` for links/Join. Row selection: light‑blue fill `#A6DDF0` with dark text (observed).
+Kalendar uses its own palette, not the reference app's. It is the palette of browser-driver-mcp's setup page: a `#00AAFF` blue accent on navy (dark) or near-white (light). Every color is a token in `Sources/Kalendar/Theme.swift`; views use no literal colors and not the system accent.
+
+| Token | Light | Dark | Used for |
+|---|---|---|---|
+| accent | `#00AAFF` | `#33BBFF` | buttons and CTAs (Add Event, Accept), today's circle, the year in the month title, the current weekday header, the TODAY section header, the Join pill, the text caret, toggles |
+| accentInk | `#0077C2` | `#66CCFF` | links in notes, accent-colored text at body size |
+| background | `#F6F8FB` | `#0B1119` | popover (arrow included), detail popover, windows |
+| card | `#FFFFFF` | `#121A25` | raised surfaces inside the background: the new-item form, suggestion lists, the Notifications card |
+| text | `#18202B` | `#E6EDF5` | primary text |
+| muted | `#5C6878` | `#93A2B5` | secondary text, past events, dimmed adjacent-month days, toolbar icons |
+| line | `#E2E7EE` | `#223042` | hairline separators |
+| ok | `#16A34A` | `#4ADE80` | accepted attendee |
+| wait | `#B7791F` | `#F0B458` | tentative attendee, overdue task date |
+| bad | `#C0392B` | `#F87171` | declined attendee, declined-item dot, inline errors, pending-invitation badge |
+
+- Row selection: accent at 20% opacity behind the row, text stays `text`.
+- Calendar color dots keep each calendar's own Google color.
+- The popover is opaque (`background`), not the translucent system popover material. NSPopover's frame, including the arrow, is painted with `background` so it matches the content.
 - Fonts: SF Pro; month title ~26 pt semibold; day numbers 13 pt; list times 12 pt, titles 13 pt, subtitles 11 pt.
 - Calendar color dots 8 pt; event dots under days 4 pt.
 - Popover corner radius 12 pt; inner cards 10 pt.
-- Light mode: invert to system defaults; keep the same accents.
+- The menu bar icon stays a monochrome template image.
 
 ---
 

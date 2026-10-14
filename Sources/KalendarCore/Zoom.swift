@@ -4,9 +4,10 @@
 import Foundation
 
 public enum ZoomOAuth {
-    /// The public client ID of Kalendar's app on marketplace.zoom.us (App Credentials, "Use Public
-    /// Client OAuth"). Empty until the app is registered; without it Kalendar doesn't offer Zoom.
-    public static let clientID = ""
+    /// The public client ID of the "Kalendar" app on marketplace.zoom.us, registered in the Playful
+    /// Software Zoom account (App Credentials, "Use Public Client OAuth"). Without it Kalendar
+    /// doesn't offer Zoom.
+    public static let clientID = "Sje6twrQRMusBBFYmWV9Q"
     public static var isConfigured: Bool { !clientID.isEmpty }
 
     /// Registered as the app's redirect URL. Kalendar listens on this port only during sign-in.

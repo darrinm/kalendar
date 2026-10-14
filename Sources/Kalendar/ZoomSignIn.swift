@@ -27,6 +27,15 @@ enum Zoom {
         listener.newConnectionHandler = { connection in
             MainActor.assumeIsolated { receive(connection) }
         }
+        // a port in use fails here, after start, not in the initializer
+        listener.stateUpdateHandler = { state in
+            guard case .failed = state else { return }
+            MainActor.assumeIsolated {
+                guard self.listener === listener else { return }
+                stop()
+                fail("Kalendar couldn't listen on port \(port) for Zoom's sign-in. Another app may be using it.")
+            }
+        }
         listener.start(queue: .main)
         self.listener = listener
         NSWorkspace.shared.open(ZoomOAuth.authorizationURL(pkce: pkce, state: state))
@@ -46,8 +55,8 @@ enum Zoom {
                     respond(connection, status: "404 Not Found", text: "Not found.")
                     return
                 }
-                respond(connection, status: "200 OK", text: "Kalendar is connected to Zoom. You can close this tab.")
-                Task { await finish(url) }
+                // the page says how the sign-in ended, so it is sent after the code exchange
+                Task { respond(connection, status: "200 OK", text: await finish(url)) }
             }
         }
     }
@@ -60,18 +69,32 @@ enum Zoom {
         connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })
     }
 
-    private static func finish(_ callback: URL) async {
-        guard let pending else { return }
+    /// Exchanges the callback's code; the text for the browser page. A request without this
+    /// sign-in's state (a stale tab, another app) is turned away and the sign-in keeps waiting.
+    private static func finish(_ callback: URL) async -> String {
+        guard let pending else { return "No Zoom sign-in is in progress." }
+        let code: String
+        do {
+            code = try GoogleOAuth.code(fromCallback: callback, expectedState: pending.state)
+        } catch GoogleOAuth.Error.stateMismatch {
+            return "This sign-in link has expired. Connect Zoom again from Kalendar."
+        } catch GoogleOAuth.Error.accessDenied {
+            stop()
+            Log.auth.info("zoom sign-in declined")
+            return "Zoom access was declined. You can close this tab."
+        } catch {
+            stop()
+            return "Zoom sign-in failed: \(error.localizedDescription)"
+        }
         stop()
         do {
-            let code = try GoogleOAuth.code(fromCallback: callback, expectedState: pending.state)
             try await account.completeSignIn(code: code, pkce: pending.pkce)
             NSApp.activate(ignoringOtherApps: true)
-        } catch GoogleOAuth.Error.accessDenied {
-            Log.auth.info("zoom sign-in declined")
+            return "Kalendar is connected to Zoom. You can close this tab."
         } catch {
             Log.auth.error("zoom sign-in failed: \(error.localizedDescription)")
             fail("Zoom sign-in failed: \(error.localizedDescription)")
+            return "Zoom sign-in failed: \(error.localizedDescription)"
         }
     }
 

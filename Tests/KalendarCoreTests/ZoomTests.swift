@@ -72,6 +72,33 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(vault.tokens["zoom"], "r3")
     }
 
+    func testConcurrentMeetingsShareOneRefresh() async throws {
+        let vault = MemoryVault()
+        vault.tokens["zoom"] = "r1"
+        let calls = Calls()
+        let zoom = ZoomAccount(vault: vault, transport: { request in
+            let url = request.url!
+            let body: String
+            if url.host == "zoom.us" {
+                calls.refreshes.append(String(data: request.httpBody!, encoding: .utf8)!)
+                // Zoom revokes a refresh token once used
+                let reused = calls.refreshes.count > 1
+                return (Data((reused ? #"{"error":"invalid_grant"}"# : #"{"access_token":"a1","expires_in":3600,"refresh_token":"r2"}"#).utf8),
+                        HTTPURLResponse(url: url, statusCode: reused ? 400 : 200, httpVersion: nil, headerFields: nil)!)
+            }
+            calls.meetings += 1
+            body = #"{"id":\#(calls.meetings),"join_url":"https://zoom.us/j/\#(calls.meetings)"}"#
+            return (Data(body.utf8), HTTPURLResponse(url: url, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        })
+        async let a = zoom.createMeeting(topic: "a", start: start, minutes: 30, timeZone: "UTC")
+        async let b = zoom.createMeeting(topic: "b", start: start, minutes: 30, timeZone: "UTC")
+        _ = try await (a, b)
+        XCTAssertEqual(calls.refreshes.count, 1)
+        XCTAssertEqual(calls.meetings, 2)
+        XCTAssertTrue(zoom.isConnected)
+        XCTAssertEqual(vault.tokens["zoom"], "r2")
+    }
+
     func testRevokedRefreshTokenDisconnects() async {
         let vault = MemoryVault()
         vault.tokens["zoom"] = "r1"

@@ -54,8 +54,8 @@ final class EventEditorModel {
         original = parsed
     }
 
-    /// The new-item form's Add Event needs a title.
-    var canAdd: Bool { !draft.summary.trimmingCharacters(in: .whitespaces).isEmpty }
+    /// The new-item form's Add Event needs a title, and waits for a Zoom meeting being created.
+    var canAdd: Bool { !draft.summary.trimmingCharacters(in: .whitespaces).isEmpty && !creatingZoom }
 
     // MARK: Video conferencing (§5.1)
 

@@ -108,11 +108,13 @@ final class MeetWithModel {
               !accounts.accounts.contains(where: { $0.email.lowercased() == key }) else { return }
         people.append(contact)
         load(contact.email)
+        cacheChanged()
     }
 
     func remove(_ contact: Contact) {
         people.removeAll { $0.email == contact.email }
         schedules[contact.email.lowercased()] = nil
+        cacheChanged()
     }
 
     // MARK: Loading
@@ -133,11 +135,15 @@ final class MeetWithModel {
         }
     }
 
-    /// The user's own events, from the cache: timed, busy, not declined, each once (§4.3).
+    /// The user's own events, from the cache: timed, busy, not declined, each once (§4.3). A chosen
+    /// person's calendar the user subscribes to is that person's time, not the user's.
     func cacheChanged() {
+        contacts = nil
+        let theirs = Set(people.map { $0.email.lowercased() })
         var seen = Set<EventInstance.DuplicateKey>()
         mine = ((try? agenda.cache.events(from: weekStart, to: weekEnd)) ?? [])
-            .filter { !$0.allDay && !$0.isDeclined && $0.transparency != "transparent" && seen.insert($0.duplicateKey).inserted }
+            .filter { !$0.allDay && !$0.isDeclined && $0.transparency != "transparent"
+                && !theirs.contains($0.calendarId.lowercased()) && seen.insert($0.duplicateKey).inserted }
             .map { Availability.Block(start: $0.start, end: $0.end, title: $0.summary) }
     }
 
@@ -333,8 +339,11 @@ private struct WeekGrid: View {
                 Theme.line.frame(height: 1)
                 ScrollViewReader { proxy in
                     ScrollView(.vertical) {
-                        TimelineView(.everyMinute) { context in
-                            grid(dayWidth: dayWidth, now: context.date)
+                        grid(dayWidth: dayWidth)
+                        // the now line alone redraws each minute, not the whole grid
+                        .overlay(alignment: .topLeading) {
+                            TimelineView(.everyMinute) { context in nowLine(dayWidth: dayWidth, now: context.date) }
+                                .allowsHitTesting(false)
                         }
                         // one marker per hour, laid out (not offset) so scrollTo can find them
                         .background(alignment: .top) {
@@ -370,7 +379,7 @@ private struct WeekGrid: View {
         .padding(.bottom, 6)
     }
 
-    private func grid(dayWidth: CGFloat, now: Date) -> some View {
+    private func grid(dayWidth: CGFloat) -> some View {
         // a person whose calendar Kalendar can't read gets no column; the legend says so
         let shown = model.people.enumerated().filter { model.schedules[$0.element.email.lowercased()] != .unavailable }
         let columns = [model.mine] + shown.map { model.schedules[$0.element.email.lowercased()]?.blocks ?? [] }
@@ -405,14 +414,10 @@ private struct WeekGrid: View {
                     ForEach(Array(laid.enumerated()), id: \.offset) { _, item in
                         let width = columnWidth / CGFloat(item.lanes)
                         BlockView(block: item.block, color: colors[column], busyOnly: busyOnly[column])
-                            .frame(width: max(width - 2, 2), height: max(height(Int(item.block.end.timeIntervalSince(item.block.start))), 14))
+                            .frame(width: max(width - 2, 2), height: max(y(item.block.end, in: day) - y(item.block.start, in: day), 14))
                             .offset(x: x + CGFloat(column) * columnWidth + CGFloat(item.lane) * width + 1,
                                     y: y(item.block.start, in: day))
                     }
-                }
-                if Calendar.current.isDate(now, inSameDayAs: day) {
-                    Theme.bad.frame(width: dayWidth, height: 2).offset(x: x, y: y(now, in: day))
-                        .allowsHitTesting(false)
                 }
             }
         }
@@ -438,6 +443,14 @@ private struct WeekGrid: View {
         }
     }
 
+    @ViewBuilder
+    private func nowLine(dayWidth: CGFloat, now: Date) -> some View {
+        if let dayIndex = model.days.firstIndex(where: { Calendar.current.isDate(now, inSameDayAs: $0) }) {
+            Theme.bad.frame(width: dayWidth, height: 2)
+                .offset(x: gutter + CGFloat(dayIndex) * dayWidth, y: y(now, in: model.days[dayIndex]))
+        }
+    }
+
     /// The 30-minute slot at `point`, by day column.
     private func slot(at point: CGPoint, dayWidth: CGFloat) -> (day: Int, start: Date)? {
         let day = Int((point.x - gutter) / dayWidth)
@@ -445,7 +458,10 @@ private struct WeekGrid: View {
         let seconds = Double(point.y / hourHeight) * 3600
         let snapped = (seconds / slot).rounded(.down) * slot
         guard snapped >= 0, snapped < 86400 else { return nil }
-        return (day, Calendar.current.date(byAdding: .second, value: Int(snapped), to: model.days[day]) ?? model.days[day])
+        // the clock time under the pointer, which on a daylight-saving day isn't midnight plus `snapped`
+        let minutes = Int(snapped) / 60
+        return (day, Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: model.days[day])
+            ?? model.days[day])
     }
 
     /// The part of `block` inside `day`; nil when it doesn't touch the day.
@@ -455,8 +471,13 @@ private struct WeekGrid: View {
         return Availability.Block(start: max(block.start, day), end: min(block.end, next), title: block.title)
     }
 
+    /// Where `date`'s clock time falls in `day`'s 24 hour rows; the next midnight is the bottom. By
+    /// clock time, so events after a daylight-saving change still line up with the hour labels.
     private func y(_ date: Date, in day: Date) -> CGFloat {
-        CGFloat(date.timeIntervalSince(day) / 3600) * hourHeight
+        let calendar = Calendar.current
+        guard let next = calendar.date(byAdding: .day, value: 1, to: day), date < next else { return 24 * hourHeight }
+        let c = calendar.dateComponents([.hour, .minute, .second], from: date)
+        return (CGFloat(c.hour ?? 0) + CGFloat(c.minute ?? 0) / 60 + CGFloat(c.second ?? 0) / 3600) * hourHeight
     }
 
     private func height(_ seconds: Int) -> CGFloat { CGFloat(seconds) / 3600 * hourHeight }

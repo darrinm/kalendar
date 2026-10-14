@@ -101,6 +101,9 @@ public final class ZoomAccount {
     @ObservationIgnored private let transport: AccountStore.Transport
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var accessToken: (token: String, expiry: Date)?
+    /// The refresh in flight. Zoom revokes a refresh token once it is used, so concurrent callers
+    /// share one refresh instead of each spending the same token.
+    @ObservationIgnored private var refreshing: Task<String, Swift.Error>?
 
     public init(vault: TokenVault = KeychainVault(),
                 transport: @escaping AccountStore.Transport = { try await AccountStore.session.data(for: $0) },
@@ -141,16 +144,22 @@ public final class ZoomAccount {
 
     private func validToken() async throws -> String {
         if let accessToken, accessToken.expiry > now().addingTimeInterval(60) { return accessToken.token }
+        if let refreshing { return try await refreshing.value }
         guard let refresh = try vault.refreshToken(for: Self.vaultKey) else {
             isConnected = false
             throw ZoomAPI.Error.notConnected
         }
-        do {
-            return try await token(ZoomOAuth.refreshRequest(refreshToken: refresh)).accessToken
-        } catch GoogleOAuth.Error.invalidGrant {
-            disconnect()
-            throw ZoomAPI.Error.notConnected
+        let task = Task { () async throws -> String in
+            defer { refreshing = nil }
+            do {
+                return try await token(ZoomOAuth.refreshRequest(refreshToken: refresh)).accessToken
+            } catch GoogleOAuth.Error.invalidGrant {
+                disconnect()
+                throw ZoomAPI.Error.notConnected
+            }
         }
+        refreshing = task
+        return try await task.value
     }
 
     /// Sends a token request and keeps what it returns. Zoom issues a new refresh token on every

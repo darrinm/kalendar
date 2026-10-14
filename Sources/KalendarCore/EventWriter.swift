@@ -120,7 +120,8 @@ public final class EventWriter {
         }
         var insert = PendingWrite(
             account: draft.account, calendarId: draft.calendarId, eventId: target.id, method: "POST",
-            path: GoogleCalendarAPI.eventPath(calendarId: draft.calendarId), query: ["sendUpdates": "none"],
+            path: GoogleCalendarAPI.eventPath(calendarId: draft.calendarId),
+            query: ["sendUpdates": "none"].merging(EventDraft.conferenceQuery(body)) { a, _ in a },
             body: body, summary: draft.summary, createdAt: now())
         insert.replaces = event.id
         enqueue(insert)

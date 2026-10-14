@@ -116,6 +116,21 @@ public struct EventInstance: Codable, Equatable, Hashable, FetchableRecord, Pers
     public var isInvitation: Bool { !organizerSelf && !attendees.isEmpty }
     /// Not yet accepted: drawn with an open circle (§4.3).
     public var isTentative: Bool { selfResponse == "needsAction" || selfResponse == "tentative" }
+
+    /// The menu bar Join item's name for the meeting (§3). "Darrin / Kate" is "Kate" for Darrin: the
+    /// title is split on "/", "<>", "&", "|" and " x ", and the parts whose first word is one of
+    /// `selfNames` (lowercased first names) or the user's attendee name are dropped. The whole title
+    /// when no part is left. At most 20 characters.
+    public func shortTitle(selfNames: Set<String>) -> String {
+        let firstWord = { (s: String) in s.split(separator: " ").first.map { $0.lowercased() } ?? "" }
+        let mine = selfNames.union(attendees.filter(\.isSelf).compactMap { $0.displayName.map(firstWord) })
+        let parts = summary.split(separator: Self.titleSeparator).map { $0.trimmingCharacters(in: .whitespaces) }
+        let others = parts.filter { !$0.isEmpty && !mine.contains(firstWord($0)) }
+        let name = others.isEmpty || others.count == parts.count ? summary : others.joined(separator: " / ")
+        return name.count > 20 ? name.prefix(19) + "…" : name
+    }
+
+    private static let titleSeparator = #/\s*(?:/|<>|&|\|)\s*|\s+[xX]\s+/#
     /// An invitation the user hasn't answered (not Maybe either): its title is grayed (§4.3).
     public var isUnanswered: Bool { isInvitation && selfResponse == "needsAction" }
     /// Answered Maybe.

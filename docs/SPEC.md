@@ -50,7 +50,7 @@ The behavior below was specified on 2026‑09‑21 from observation of an existi
 - **Left‑click**: toggle popover.
 - **⌥‑click** [out of scope]: the reference app opens the full window; here, no‑op or open Settings.
 - Right‑click: small menu — Settings…, Check for Updates…, About, Quit. **[decision]**
-- **Join item [decision]:** while an event would get the Join pill (§4.3: timed, video link, not declined, in progress or starting within 15 minutes), a second status item to the left of the glyph shows a video glyph and "Join". Clicking it opens the link and removes the item. It does not return for that event; it returns for the next event that qualifies. It updates each minute and after each sync.
+- **Join item [decision]:** while an event would get the Join pill (§4.3: timed, video link, not declined, in progress or starting within 15 minutes), a second status item to the right of the glyph shows a video glyph and "Join <name>". The name is the event title without the user's own name: "Darrin / Kate" shows "Join Kate" for Darrin. The title is split on "/", "<>", "&", "|" and " x ", and the parts that start with the user's first name (from the account email or the user's attendee name) are dropped. With no part left, it is the whole title. Names longer than 20 characters are cut with "…". Clicking it opens the link and hides the item. It does not return for that event; it returns for the next event that qualifies. It updates each minute and after each sync.
 - Must coexist with menu bar managers (Bartender/Ice): use a standard `NSStatusItem`; anchor the popover to `statusItem.button`.
 
 ---

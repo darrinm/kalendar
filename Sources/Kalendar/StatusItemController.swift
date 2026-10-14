@@ -1,12 +1,16 @@
 // The menu bar item (§3, §12): a calendar glyph with today's day number, or the glyph alone, or
 // the next event's title, with an optional countdown. Left-click toggles the popover; right-click
-// (or ⌃-click) opens a small menu. A second item, Join, shows while a video meeting is in progress or
-// starts within 15 minutes; clicking it opens the meeting link and removes it.
+// (or ⌃-click) opens a small menu. A second item to its right, "Join Kate", shows while a video
+// meeting is in progress or starts within 15 minutes; clicking it opens the meeting link and hides it.
 import AppKit
 import KalendarCore
 
 @MainActor
 final class StatusItemController: NSObject {
+    // macOS puts each new item to the left of the existing ones, so the Join item is made first to
+    // sit right of the calendar item. It is hidden, not removed, when there is no meeting, so it keeps
+    // that place.
+    private let joinItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let onToggle: () -> Void
     private let menu: NSMenu
@@ -14,7 +18,8 @@ final class StatusItemController: NSObject {
     var nextEvent: () -> EventInstance? = { nil }
     /// The event to offer Join for (`ConferenceDetector.joinCandidate`).
     var joinEvent: () -> EventInstance? = { nil }
-    private var joinItem: NSStatusItem?
+    /// The user's lowercased first names, which the Join item's label leaves out.
+    var selfNames: () -> Set<String> = { [] }
     /// The event whose link the Join item last opened. Its Join item stays hidden. A duplicate key,
     /// so a copy of the same meeting on another calendar stays hidden too.
     private var joinedKey: EventInstance.DuplicateKey?
@@ -27,6 +32,11 @@ final class StatusItemController: NSObject {
         self.onToggle = onToggle
         self.menu = menu
         super.init()
+        joinItem.isVisible = false
+        joinItem.button?.target = self
+        joinItem.button?.action = #selector(join)
+        joinItem.button?.image = NSImage(systemSymbolName: "video.fill", accessibilityDescription: nil)
+        joinItem.button?.imagePosition = .imageLeading
         guard let button = item.button else { return }
         button.target = self
         button.action = #selector(clicked)
@@ -84,21 +94,14 @@ final class StatusItemController: NSObject {
     private func redrawJoin() {
         guard let event = joinEvent(), event.duplicateKey != joinedKey,
               let link = event.conferenceURL, let url = URL(string: link) else {
-            if let joinItem { NSStatusBar.system.removeStatusItem(joinItem) }
-            joinItem = nil
+            joinItem.isVisible = false
             joinTarget = nil
             return
         }
-        // created after the calendar item, so it sits to its left
-        let item = joinItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        joinItem = item
         joinTarget = (event.duplicateKey, url)
-        guard let button = item.button else { return }
-        button.target = self
-        button.action = #selector(join)
-        button.image = NSImage(systemSymbolName: "video.fill", accessibilityDescription: nil)
-        button.imagePosition = .imageLeading
-        button.title = " Join"
+        joinItem.isVisible = true
+        guard let button = joinItem.button else { return }
+        button.title = " Join " + event.shortTitle(selfNames: selfNames())
         button.toolTip = event.summary
         button.setAccessibilityLabel("Join \(ConferenceDetector.serviceName(for: link)) meeting, \(event.summary)")
     }

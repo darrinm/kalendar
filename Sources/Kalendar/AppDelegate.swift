@@ -56,6 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         prefs.applyAppearance()
         statusItem.nextEvent = { [weak self] in self?.nextEventToday() }
         statusItem.joinEvent = { [weak self] in self?.joinEvent() }
+        // "darrin.massena@example.com" → "darrin"
+        statusItem.selfNames = { [weak self] in
+            Set(self?.accounts.accounts.compactMap { $0.email.split(whereSeparator: { "@._+".contains($0) }).first?.lowercased() } ?? [])
+        }
         statusItem.redraw()
         prefs.onChange = { [weak self] key in
             guard let self else { return }

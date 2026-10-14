@@ -122,6 +122,28 @@ final class EventParsingTests: XCTestCase {
         XCTAssertEqual(pick([e("running", start: -30, end: 30), e("next", start: 10, end: 40)]), "next")
     }
 
+    func testShortTitleDropsTheUsersName() {
+        func short(_ summary: String, selfAttendee: String? = nil) -> String {
+            let me = selfAttendee.map { [Attendee(email: "me@x.com", displayName: $0, isSelf: true, organizer: false,
+                                                  optional: false, responseStatus: "accepted")] } ?? []
+            return EventInstance(account: "a", calendarId: "c", id: "e", recurringEventId: nil, summary: summary,
+                                 location: nil, notes: nil, start: Date(), end: Date(), allDay: false, transparency: nil,
+                                 colorId: nil, conferenceURL: nil, selfResponse: nil, organizerSelf: false, attendees: me,
+                                 htmlLink: nil, etag: nil, visibility: nil, timeZone: nil)
+                .shortTitle(selfNames: ["darrin"])
+        }
+        XCTAssertEqual(short("Darrin/Kate"), "Kate")
+        XCTAssertEqual(short("Steve / Darrin"), "Steve")
+        XCTAssertEqual(short("Darrin / Jorge 1:1"), "Jorge 1:1")
+        XCTAssertEqual(short("Anthony <> Darrin"), "Anthony")
+        XCTAssertEqual(short("Darrin x Kate"), "Kate")
+        XCTAssertEqual(short("Kate & Sam / Darrin"), "Kate / Sam")
+        XCTAssertEqual(short("Pat / Kim", selfAttendee: "Pat Lee"), "Kim")
+        XCTAssertEqual(short("UXR readout"), "UXR readout")
+        XCTAssertEqual(short("Darrin"), "Darrin")
+        XCTAssertEqual(short("Engineering Standup and Planning"), "Engineering Standup…")
+    }
+
     /// Location is checked before notes, so a Zoom room in the location wins over a Meet link in notes.
     func testLocationBeatsNotes() throws {
         let e = try event("""

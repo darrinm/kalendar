@@ -361,6 +361,8 @@ final class PopoverModel {
     /// Bumped to ask the input field to take focus.
     var focusRequest = 0
     @ObservationIgnored var close: () -> Void = {}
+    /// Opens the Meet With window (§21).
+    @ObservationIgnored var showMeetWith: () -> Void = {}
     /// Shows a popover beside the Mini Window; false when the open one refused to close.
     @ObservationIgnored var showChild: (NSView, AnyView, CGFloat, NSRectEdge, (() -> Bool)?) -> Bool = { _, _, _, _, _ in false }
     @ObservationIgnored var contentView: () -> NSView? = { nil }

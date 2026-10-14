@@ -267,6 +267,9 @@ private struct Toolbar: View {
                     .keyboardShortcut(.delete, modifiers: .command)
                     .disabled(!model.hasSelection)
                 Divider()
+                Button("Meet With…") { model.showMeetWith() }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                Divider()
                 Button("Refresh All") { model.refresh() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Settings…") { model.showSettings() }
@@ -390,17 +393,7 @@ private struct SuggestionList: View {
             }
             .uiFont(13)
         case .contact(let c):
-            HStack(spacing: 8) {
-                Text(String((c.name ?? c.email).prefix(1)).uppercased())
-                    .uiFont(11, weight: .semibold)
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 24, height: 24)
-                    .background(Theme.line, in: Circle())
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(c.name ?? c.email).uiFont(13).foregroundStyle(Theme.text)
-                    if c.name != nil { Text(c.email).uiFont(11).foregroundStyle(Theme.muted) }
-                }
-            }
+            ContactRow(contact: c)
         case .place(let title, let subtitle):
             HStack(spacing: 8) {
                 Image(systemName: "mappin.circle.fill").foregroundStyle(Theme.bad).accessibilityHidden(true)
@@ -408,6 +401,25 @@ private struct SuggestionList: View {
                     Text(title).uiFont(13).foregroundStyle(Theme.text).lineLimit(1)
                     if !subtitle.isEmpty { Text(subtitle).uiFont(11).foregroundStyle(Theme.muted).lineLimit(1) }
                 }
+            }
+        }
+    }
+}
+
+/// A contact suggestion: an initial in a circle, the name, and the email under it.
+struct ContactRow: View {
+    let contact: Contact
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(String((contact.name ?? contact.email).prefix(1)).uppercased())
+                .uiFont(11, weight: .semibold)
+                .foregroundStyle(Theme.text)
+                .frame(width: 24, height: 24)
+                .background(Theme.line, in: Circle())
+            VStack(alignment: .leading, spacing: 0) {
+                Text(contact.name ?? contact.email).uiFont(13).foregroundStyle(Theme.text)
+                if contact.name != nil { Text(contact.email).uiFont(11).foregroundStyle(Theme.muted) }
             }
         }
     }

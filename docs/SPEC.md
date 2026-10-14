@@ -49,7 +49,7 @@ The behavior below was specified on 2026‑09‑21 from observation of an existi
 - Template‑style calendar glyph showing today's day number ("21"). Redraw at midnight and on `NSCalendarDayChanged`.
 - **Left‑click**: toggle popover.
 - **⌥‑click** [out of scope]: the reference app opens the full window; here, no‑op or open Settings.
-- Right‑click: small menu — Settings…, Check for Updates…, About, Quit. **[decision]**
+- Right‑click: small menu — Meet With… (§21), Settings…, Check for Updates…, About, Quit. **[decision]**
 - **Join item [decision]:** while an event would get the Join pill (§4.3: timed, video link, not declined, in progress or starting within 15 minutes), a second status item to the right of the glyph shows a video glyph and "Join <name>". The name is the event title without the user's own name: "Darrin / Kate" shows "Join Kate" for Darrin. The title is split on "/", "<>", "&", "|" and " x ", and the parts that start with the user's first name (from the account email or the user's attendee name) are dropped. With no part left, it is the whole title. Names longer than 20 characters are cut with "…". Clicking it opens the link and hides the item. It does not return for that event; it returns for the next event that qualifies. It updates each minute and after each sync.
 - Must coexist with menu bar managers (Bartender/Ice): use a standard `NSStatusItem`; anchor the popover to `statusItem.button`.
 
@@ -146,7 +146,7 @@ Behaviors:
   ─────
   Quit Completely
   ```
-  **[decision]** v1 menu: Go to Today ⌘T · Go to Date… ⇧⌘T · Delete Item ⌘⌫ · — · Refresh All ⇧⌘R · Settings… ⌘, · Check for Updates… (§20) · Launch at Login (checkable) · — · Quit ⌘Q. Detach / Keep in Front return in v2.
+  **[decision]** v1 menu: Go to Today ⌘T · Go to Date… ⇧⌘T · Delete Item ⌘⌫ · — · Meet With… ⇧⌘M (§21) · — · Refresh All ⇧⌘R · Settings… ⌘, · Check for Updates… (§20) · Launch at Login (checkable) · — · Quit ⌘Q. Detach / Keep in Front return in v2.
 
 ---
 
@@ -411,6 +411,7 @@ Tasks are Google Tasks. Completing writes `status: "completed"`; uncompleting wr
 | ⌘, | Settings |
 | ⇧⌘T | Go to Date… |
 | ⇧⌘R | Refresh All (run an incremental sync for every calendar and task list now) |
+| ⇧⌘M | Meet With… (§21) |
 | ⌘Q | Quit |
 | ⌃⌘A | Keep popover in front (v2) |
 
@@ -602,3 +603,21 @@ Kapture's implementation is the reference: `~/src/kapture/Sources/Kapture/Update
 - **Bundle ID:** `com.massena.kalendar`. Repo: `darrinm/kalendar`.
 - **Entitlements:** none. Kalendar does not need Kapture's `keychain-access-groups` entitlement or provisioning profile, so `bundle.sh` signs without an entitlements file.
 - Add Sparkle's MIT license to `THIRD-PARTY-NOTICES.md`.
+
+---
+
+## 21. Meet With **[decision]**
+
+Google Calendar's "Meet with…": pick people, see their calendars over the user's own, click a free slot to invite them.
+
+- **Opening:** ⚙ menu **Meet With… ⇧⌘M**, and the status item's right‑click menu. A separate, resizable window (1000×720 pt at first; the frame is remembered).
+- **People:** a "Meet with" field. Typing suggests contacts as the new‑item form does (§18.4, `Contact.matching`); ↑/↓ choose, Enter adds, Esc clears. Enter on a typed email address adds it as is. Each person is a removable chip in their color. The user's own accounts are not added.
+- **Week:** ‹ › and Today step by week; the week starts on the First day of week setting (§12). The grid shows 24 hours, 48 pt per hour, and opens scrolled to 8 AM. Today's header is in the accent, with a red line at the current time.
+- **Columns:** each day is split into one column per person, the user first (accent), then each person in the order added (purple, orange, green, pink, teal, gold). Overlapping events within a column sit side by side (`Availability.lanes`). Only timed events show.
+- **The user's events:** from the cache: selected calendars, not declined, not free, each identical event once (§4.3).
+- **Other people's events,** for the week (`Availability.load`), trying first the accounts in the person's email domain, then the others:
+  1. `events.list` on their email as the calendar id. Works when their calendar is shared with that account; blocks show titles. Their free events and events they declined are left out.
+  2. Otherwise `freeBusy` (POST `/freeBusy`, covered by the `calendar` scope). Blocks read "Busy", drawn outlined; the legend says "busy times only".
+  3. Otherwise no column; the legend says "calendar not shared".
+- **Blocks** show the title (two lines when tall enough) and the time range when 70 pt wide or more; the tooltip has both.
+- **Making the meeting:** the 30‑minute slot under the pointer is highlighted at the default duration's height. A click opens the new‑event form (§5.1, `EventEditor`) in a popover beside the slot: that start, the default duration, busy, the calendar's default alerts, on the Default calendar or the primary calendar of the account in the first person's domain, with the user as organizer and everyone chosen invited. Add Event inserts it (§5.4); the user's column updates at once.

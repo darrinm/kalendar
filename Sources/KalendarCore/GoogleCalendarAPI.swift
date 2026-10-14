@@ -117,6 +117,17 @@ public enum GoogleCalendarAPI {
 
     static func iso(_ date: Date) -> String { internetDate.string(from: date) }
 
+    /// "2026-10-12T16:00:00Z", with or without fractional seconds.
+    static func parseInstant(_ s: String) -> Date? { internetDate.date(from: s) ?? internetDateFractional.date(from: s) }
+
+    /// Busy times for `emails` in [from, to) (Meet With, §21). Google answers for each calendar with
+    /// its busy stretches, or with errors when the calendar is unknown or not shared.
+    public static func freeBusyRequest(emails: [String], from: Date, to: Date) -> Builder {
+        let body: [String: Any] = ["timeMin": iso(from), "timeMax": iso(to), "items": emails.map { ["id": $0] }]
+        return { request("/freeBusy", [:], method: "POST", body: try? JSONSerialization.data(withJSONObject: body),
+                         accessToken: $0) }
+    }
+
     /// "2026-10-12" is a calendar day, not an instant: midnight in the user's time zone. Used for
     /// all-day events and task due dates. Google's days are Gregorian whatever `calendar` is.
     static func localDay(_ ymd: some StringProtocol, calendar: Calendar) -> Date? {
@@ -214,6 +225,16 @@ public enum GoogleCalendarAPI {
         }
     }
 
+    public struct FreeBusyResponse: Decodable {
+        struct Calendar: Decodable {
+            struct Busy: Decodable { var start: String; var end: String }
+            struct Failure: Decodable { var reason: String? }
+            var busy: [Busy]?
+            var errors: [Failure]?
+        }
+        var calendars: [String: Calendar]?
+    }
+
     public struct EventsPage: Paged {
         public var nextPageToken: String?
         public var nextSyncToken: String?
@@ -297,8 +318,7 @@ public enum GoogleCalendarAPI {
 
         static func parse(_ t: Time, calendar: Calendar) -> (Date, Bool)? {
             if let dt = t.dateTime {
-                guard let d = GoogleCalendarAPI.internetDate.date(from: dt)
-                        ?? GoogleCalendarAPI.internetDateFractional.date(from: dt) else { return nil }
+                guard let d = GoogleCalendarAPI.parseInstant(dt) else { return nil }
                 return (d, false)
             }
             if let day = t.date {

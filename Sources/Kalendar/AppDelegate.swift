@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: StatusItemController!
     private var popover: PopoverController!
     private var alerts: AlertScheduler!
+    private var meetWith: MeetWithWindowController!
+    private var meetWithModel: MeetWithModel!
     private lazy var settings = SettingsWindowController(accounts: accounts, cache: cache, engine: engine, alerts: alerts,
                                                          signIn: signIn)
     private lazy var googleSignIn = GoogleSignIn(accounts: accounts)
@@ -30,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             agenda.cacheChanged()
             self?.alerts.setNeedsReschedule()
             self?.statusItem?.redraw()
+            self?.meetWithModel?.cacheChanged()
         }
         let model = PopoverModel(accounts: accounts, agenda: agenda, writer: writer, signIn: signIn,
                                  showSettings: { [weak self] in self?.showSettings() },
@@ -38,6 +41,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                      self?.sync()
                                  })
         popover = PopoverController(model: model)
+        meetWithModel = MeetWithModel(agenda: agenda, accounts: accounts, writer: writer)
+        meetWith = MeetWithWindowController(model: meetWithModel)
+        model.showMeetWith = { [weak self] in self?.showMeetWith() }
         alerts.openEvent = { [weak self] event in
             guard let self else { return }
             if !popover.isShown { togglePopover() }
@@ -105,6 +111,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `open Kalendar.app --args -openPopoverAtLaunch YES` opens the popover for UI testing.
         // Delayed because the status item has no on-screen position yet at launch, and NSPopover
         // silently refuses to show against it.
+        // `--args -meetWithAtLaunch a@x.com,b@y.com` opens Meet With with those people, for UI testing
+        if let emails = UserDefaults.standard.string(forKey: "meetWithAtLaunch") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                let contacts = (try? cache.allContacts()) ?? []
+                for email in emails.split(separator: ",").map(String.init) {
+                    meetWithModel.add(contacts.first { $0.email.lowercased() == email.lowercased() }
+                        ?? Contact(account: "", email: email, name: nil, photoURL: nil))
+                }
+                showMeetWith()
+            }
+        }
         if UserDefaults.standard.bool(forKey: "openPopoverAtLaunch") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.togglePopover() }
         }
@@ -193,12 +210,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
+        menu.addItem(withTitle: "Meet With…", action: #selector(showMeetWith), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         menu.addItem(withTitle: "About Kalendar", action: #selector(showAbout), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Kalendar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
+    }
+
+    @objc func showMeetWith() {
+        popover.close()
+        meetWith.show()
     }
 
     @objc func showSettings() {

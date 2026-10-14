@@ -420,7 +420,7 @@ final class PopoverModel {
 
     /// Enter or Add Event (§5.4): adds, clears, and returns to today after ~2 s.
     func addNewItem() {
-        _ = newItem.add { [weak self] in self?.itemAdded() }
+        newItem.add { [weak self] in self?.itemAdded() }
     }
 
     private func itemAdded() {

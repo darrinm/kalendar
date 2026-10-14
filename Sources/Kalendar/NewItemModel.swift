@@ -205,8 +205,8 @@ final class NewItemModel {
     // MARK: Commit
 
     /// Adds the item (§5.4) and then calls `added`; an event with Zoom chosen waits for its meeting
-    /// (`EventEditorModel.commit`). Returns false when there is nothing to add.
-    func add(then added: @escaping () -> Void) -> Bool {
+    /// (`EventEditorModel.commit`), and isn't added when the form is cancelled meanwhile.
+    func add(then added: @escaping () -> Void) {
         if let taskForm, taskForm.canAdd {
             let t = taskForm.draft
             writer.insertTask(title: t.title.trimmingCharacters(in: .whitespaces), notes: t.notes, due: t.due,
@@ -214,13 +214,11 @@ final class NewItemModel {
             finish(added)
         } else if let form, form.canAdd {
             form.commit { [weak self] draft in
-                self?.writer.insert(draft)
-                self?.finish(added)
+                guard let self, self.form === form else { return }
+                writer.insert(draft)
+                finish(added)
             }
-        } else {
-            return false
         }
-        return true
     }
 
     private func finish(_ added: () -> Void) {

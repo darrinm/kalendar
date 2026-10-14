@@ -179,8 +179,9 @@ final class MeetWithModel {
 
     func addEvent() {
         guard let form = newEvent, form.canAdd else { return }
+        // a form closed or replaced while its Zoom meeting was created adds nothing
         form.commit { [weak self] draft in
-            guard let self else { return }
+            guard let self, newEvent === form else { return }
             writer.insert(draft)
             if Preferences.shared.playSounds { NSSound(named: "Pop")?.play() }
             newEvent = nil

@@ -49,12 +49,15 @@ final class EventEditorModel {
         // the default video (§12); Zoom only while Kalendar is connected to it
         let video = Preferences.shared.defaultVideo
         self.video = video == .zoom && !Zoom.account.isConnected ? .none : video
+        originalVideo = self.video
         self.draft.addGoogleMeet = self.video == .googleMeet
         original.addGoogleMeet = self.draft.addGoogleMeet
     }
 
     /// The input changed: fields the user hasn't edited by hand take the new parse (§5.2).
+    /// While Add Event waits for a Zoom meeting, the form keeps what was added.
     func follow(_ parsed: EventDraft) {
+        guard !creatingZoom else { return }
         var parsed = parsed
         // the default video is the baseline, so it isn't counted as a change by hand
         parsed.addGoogleMeet = original.addGoogleMeet
@@ -70,6 +73,8 @@ final class EventEditorModel {
     typealias Video = Preferences.Video
 
     private(set) var video: Video = .none
+    /// The video the new-item form opened with; choosing another one is an edit by hand (§8.3).
+    private var originalVideo: Video = .none
     /// The Zoom join link this form added to the draft.
     private(set) var zoomLink: String?
     /// A Zoom meeting is being created.
@@ -86,7 +91,9 @@ final class EventEditorModel {
         video = choice
         draft.addGoogleMeet = choice == .googleMeet
         if choice != .zoom { removeZoomLink() }
-        if choice == .zoom && !isNew { Task { await attachZoom() } }
+        if choice == .zoom && !isNew {
+            Task { if !(await attachZoom()) { video = .none } }
+        }
     }
 
     /// Add Event: hands the draft to `insert`, after creating the Zoom meeting when Zoom is chosen.
@@ -97,7 +104,6 @@ final class EventEditorModel {
     }
 
     /// Creates the Zoom meeting and puts its link in the draft; false when Zoom refused.
-    @discardableResult
     private func attachZoom() async -> Bool {
         guard zoomLink == nil else { return true }
         creatingZoom = true
@@ -145,7 +151,7 @@ final class EventEditorModel {
     /// write, so nothing is editable.
     var isReadOnlyCalendar: Bool { !agenda.isWritable(event) }
     var isRecurring: Bool { event.recurringEventId != nil }
-    var hasChanges: Bool { draft != original }
+    var hasChanges: Bool { draft != original || (isNew && video != originalVideo) }
 
     var writableCalendars: [CalendarInfo] {
         agenda.calendars.filter { c in

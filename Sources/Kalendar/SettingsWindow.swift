@@ -307,6 +307,11 @@ private struct AccountsSettings: View {
                     Picker("New events", selection: $prefs.defaultVideo) {
                         ForEach(Preferences.Video.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
+                    // the default applies Zoom only while connected (EventEditorModel)
+                    if prefs.defaultVideo == .zoom && !Zoom.account.isConnected {
+                        Text("New events start with None until Zoom is connected.")
+                            .foregroundStyle(.secondary)
+                    }
                     LabeledContent("Zoom") {
                         if Zoom.account.isConnected {
                             Button("Disconnect") { Zoom.account.disconnect() }

@@ -228,7 +228,7 @@ public enum GoogleCalendarAPI {
     public struct FreeBusyResponse: Decodable {
         struct Calendar: Decodable {
             struct Busy: Decodable { var start: String; var end: String }
-            struct Failure: Decodable { var reason: String? }
+            struct Failure: Decodable {}
             var busy: [Busy]?
             var errors: [Failure]?
         }

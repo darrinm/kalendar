@@ -31,6 +31,14 @@ public final class AccountStore {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
     public private(set) var accounts: [Account] = []
+
+    /// The signed-in emails, those in `email`'s domain first: a Workspace shares calendars and
+    /// free/busy within the organization (§21).
+    public func emails(preferringDomainOf email: String) -> [String] {
+        let domain = "@" + (email.split(separator: "@").last?.lowercased() ?? "")
+        let all = accounts.map(\.email)
+        return all.filter { $0.lowercased().hasSuffix(domain) } + all.filter { !$0.lowercased().hasSuffix(domain) }
+    }
     /// Called after an account signs out, so its cached data can be deleted (§8.5).
     @ObservationIgnored public var onSignedOut: (String) -> Void = { _ in }
 

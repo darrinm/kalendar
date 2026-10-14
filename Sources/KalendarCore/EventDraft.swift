@@ -135,9 +135,21 @@ public struct EventDraft: Equatable {
         ["createRequest": ["requestId": UUID().uuidString, "conferenceSolutionKey": ["type": "hangoutsMeet"]]]
     }
 
-    /// The query a write needs: Google ignores `conferenceData` without `conferenceDataVersion=1`.
-    public static func conferenceQuery(_ body: [String: Any]?) -> [String: String] {
-        body?["conferenceData"] == nil ? [:] : ["conferenceDataVersion": "1"]
+    /// `query` for a write of `body`, with `conferenceDataVersion=1` when the body carries
+    /// `conferenceData`, which Google ignores without it.
+    public static func query(_ query: [String: String], for body: [String: Any]?) -> [String: String] {
+        body?["conferenceData"] == nil ? query : query.merging(["conferenceDataVersion": "1"]) { a, _ in a }
+    }
+
+    /// Invites `guests` (email, name), each once and never the organizer: the organizer is listed
+    /// with them, accepted, as Google does. No guests, no attendees.
+    public mutating func invite(_ guests: [(email: String, name: String?)]) {
+        var seen: Set<String> = [account.lowercased()]
+        let unique = guests.filter { seen.insert($0.email.lowercased()).inserted }
+        attendees = unique.isEmpty ? [] : [Attendee(email: account, displayName: nil, isSelf: true, organizer: true,
+                                                    optional: false, responseStatus: "accepted")]
+            + unique.map { Attendee(email: $0.email, displayName: $0.name, isSelf: false, organizer: false,
+                                    optional: false, responseStatus: "needsAction") }
     }
 
     /// Writing `date` clears `dateTime` and the reverse, so switching all-day on or off patches cleanly.

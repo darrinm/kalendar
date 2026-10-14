@@ -34,13 +34,10 @@ public enum Availability {
         }
     }
 
-    /// Loads `email`'s timed events in [from, to). Accounts in the person's email domain are tried
-    /// first, since a Workspace shares calendars and free/busy within the organization.
+    /// Loads `email`'s timed events in [from, to), trying accounts in the person's domain first.
     @MainActor
     public static func load(_ email: String, from: Date, to: Date, accounts: AccountStore) async -> Schedule {
-        let domain = "@" + (email.split(separator: "@").last?.lowercased() ?? "")
-        let all = accounts.accounts.map(\.email)
-        let ordered = all.filter { $0.lowercased().hasSuffix(domain) } + all.filter { !$0.lowercased().hasSuffix(domain) }
+        let ordered = accounts.emails(preferringDomainOf: email)
         for account in ordered {
             if let blocks = try? await events(of: email, from: from, to: to, account: account, accounts: accounts) {
                 return .events(blocks)

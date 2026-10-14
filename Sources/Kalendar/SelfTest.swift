@@ -87,9 +87,7 @@ struct SelfTest {
         check(status == 200 && g["summary"] as? String == title, "insert: Google has the event")
         check((g["hangoutLink"] as? String)?.hasPrefix("https://meet.google.com/") == true,
               "insert: Google created a Meet link (\(g["hangoutLink"] as? String ?? "none"))")
-        check(created.conferenceURL != nil || ((try? cache.event(account: calendar.account, calendarId: calendar.id,
-                                                                  id: created.id))??.conferenceURL) != nil,
-              "insert: the cached event has the Meet link")
+        check(created.conferenceURL != nil, "insert: the cached event has the Meet link")
 
         let original = EventDraft(created, recurrence: nil)
         var edited = original

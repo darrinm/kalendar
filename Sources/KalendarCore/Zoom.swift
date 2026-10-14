@@ -56,11 +56,14 @@ public enum ZoomAPI {
     public enum Error: Swift.Error, Equatable, LocalizedError {
         case notConnected
         case http(Int, String?)
+        /// Zoom's token endpoint refused a sign-in or refresh, with its error code.
+        case signIn(String)
 
         public var errorDescription: String? {
             switch self {
             case .notConnected: "Kalendar isn't signed in to Zoom. Connect Zoom in Settings › Accounts."
             case .http(let status, let message): "Zoom couldn't create the meeting: \(message ?? "HTTP \(status)")."
+            case .signIn(let code): "Zoom refused the sign-in (\(code))."
             }
         }
     }
@@ -166,7 +169,15 @@ public final class ZoomAccount {
     /// refresh and revokes the old one, so each one is stored.
     private func token(_ request: URLRequest) async throws -> GoogleOAuth.TokenResponse {
         let (data, response) = try await transport(request)
-        let parsed = try GoogleOAuth.parseTokenResponse(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        let parsed: GoogleOAuth.TokenResponse
+        do {
+            parsed = try GoogleOAuth.parseTokenResponse(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        } catch GoogleOAuth.Error.server(let code) {
+            // GoogleOAuth's own messages name Google
+            throw ZoomAPI.Error.signIn(code)
+        } catch GoogleOAuth.Error.malformedResponse {
+            throw ZoomAPI.Error.signIn("unreadable response")
+        }
         if let refresh = parsed.refreshToken { vault.setRefreshToken(refresh, for: Self.vaultKey) }
         accessToken = (parsed.accessToken, now().addingTimeInterval(parsed.expiresIn))
         return parsed

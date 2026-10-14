@@ -87,18 +87,21 @@ final class EventEditorModel {
                                                                    minutes: minutes, timeZone: draft.timeZone)
                 zoomLink = meeting.joinURL
                 if draft.location.isEmpty { draft.location = meeting.joinURL }
-                draft.notes = draft.notes.isEmpty ? "Join Zoom Meeting\n\(meeting.joinURL)"
-                                                  : "Join Zoom Meeting\n\(meeting.joinURL)\n\n\(draft.notes)"
+                let note = Self.zoomNote(meeting.joinURL)
+                draft.notes = draft.notes.isEmpty ? note : "\(note)\n\n\(draft.notes)"
             } catch {
                 videoError = error.localizedDescription
             }
         }
     }
 
+    /// What a Zoom meeting adds to the notes, and what removing it takes out.
+    private static func zoomNote(_ link: String) -> String { "Join Zoom Meeting\n\(link)" }
+
     private func removeZoomLink() {
         guard let link = zoomLink else { return }
         if draft.location == link { draft.location = "" }
-        for added in ["Join Zoom Meeting\n\(link)\n\n", "Join Zoom Meeting\n\(link)"] {
+        for added in [Self.zoomNote(link) + "\n\n", Self.zoomNote(link)] {
             draft.notes = draft.notes.replacingOccurrences(of: added, with: "")
         }
         zoomLink = nil

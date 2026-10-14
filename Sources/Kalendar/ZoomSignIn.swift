@@ -10,6 +10,8 @@ enum Zoom {
     static let account = ZoomAccount()
     private static var listener: NWListener?
     private static var pending: (pkce: GoogleOAuth.PKCE, state: String)?
+    private static let portInUse = "Kalendar couldn't listen on port \(ZoomOAuth.redirectPort) for Zoom's sign-in. "
+        + "Another app may be using it."
 
     /// Starts a sign-in; does nothing while one is running.
     static func signIn() {
@@ -18,7 +20,7 @@ enum Zoom {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: port)
         guard let listener = try? NWListener(using: parameters) else {
-            fail("Kalendar couldn't listen on port \(port) for Zoom's sign-in. Another app may be using it.")
+            fail(portInUse)
             return
         }
         let pkce = GoogleOAuth.PKCE.generate()
@@ -33,7 +35,7 @@ enum Zoom {
             MainActor.assumeIsolated {
                 guard self.listener === listener else { return }
                 stop()
-                fail("Kalendar couldn't listen on port \(port) for Zoom's sign-in. Another app may be using it.")
+                fail(portInUse)
             }
         }
         listener.start(queue: .main)
@@ -92,9 +94,10 @@ enum Zoom {
             NSApp.activate(ignoringOtherApps: true)
             return "Kalendar is connected to Zoom. You can close this tab."
         } catch {
-            Log.auth.error("zoom sign-in failed: \(error.localizedDescription)")
-            fail("Zoom sign-in failed: \(error.localizedDescription)")
-            return "Zoom sign-in failed: \(error.localizedDescription)"
+            let message = "Zoom sign-in failed: \(error.localizedDescription)"
+            Log.auth.error("\(message)")
+            fail(message)
+            return message
         }
     }
 
@@ -104,11 +107,5 @@ enum Zoom {
         pending = nil
     }
 
-    private static func fail(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Couldn't connect Zoom"
-        alert.informativeText = message
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-    }
+    private static func fail(_ message: String) { Dialogs.error("Couldn't connect Zoom", message) }
 }

@@ -21,7 +21,7 @@ final class EventWriterTests: XCTestCase {
                                     now: { [now] in now })
         cache = try CalendarCache()
         engine = SyncEngine(accounts: accounts, cache: cache, now: { [now] in now })
-        writer = EventWriter(accounts: accounts, cache: cache, engine: engine, now: { [now] in now })
+        writer = EventWriter(accounts: accounts, cache: cache, engine: engine, now: { [now] in now }, conferencePoll: 0)
         try cache.replaceCalendars([
             CalendarInfo(account: "me@example.com", id: "primary", summary: "Me", backgroundColor: "#000000",
                          accessRole: "owner", selected: true, primary: true),
@@ -381,15 +381,20 @@ final class EventWriterTests: XCTestCase {
         XCTAssertTrue(meet.url!.query!.contains("conferenceDataVersion=1"))
     }
 
-    /// Google changes the event's etag when it attaches the conference, after answering the insert.
+    /// Google changes the event's etag about a second after answering an insert that creates a
+    /// conference; the writer polls until it has.
     func testEditAfterAddingMeetSendsTheEtagFetchedAfterTheInsert() async throws {
         var draft = EventDraft(parsed: NLParser(now: now).parse("Sync tomorrow 3pm"), account: "me@example.com",
                                calendarId: "primary")
         draft.addGoogleMeet = true
-        google.handler = { r, _ in (200, self.serverEvent("g1", title: "Sync", etag: r.httpMethod == "POST" ? "\"1\"" : "\"2\"")) }
+        // the first fetch still has the insert's etag; Google's update arrives before the second
+        google.handler = { r, _ in
+            let gets = self.google.requests.filter { $0.httpMethod == "GET" }.count
+            return (200, self.serverEvent("g1", title: "Sync", etag: r.httpMethod == "GET" && gets >= 2 ? "\"2\"" : "\"1\""))
+        }
         writer.insert(draft)
         await writer.flush()
-        XCTAssertEqual(google.requests.compactMap(\.httpMethod), ["POST", "GET"])
+        XCTAssertEqual(google.requests.compactMap(\.httpMethod), ["POST", "GET", "GET"])
         let cached = try XCTUnwrap(cache.event(account: "me@example.com", calendarId: "primary", id: "g1"))
         XCTAssertEqual(cached.etag, "\"2\"")
         var edited = EventDraft(cached, recurrence: nil)

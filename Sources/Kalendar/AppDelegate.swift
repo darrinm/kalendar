@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             agenda.cacheChanged()
             self?.alerts.setNeedsReschedule()
             self?.statusItem?.redraw()
-            self?.meetWithModel?.cacheChanged()
+            self?.meetWith?.cacheChanged()
         }
         let model = PopoverModel(accounts: accounts, agenda: agenda, writer: writer, signIn: signIn,
                                  showSettings: { [weak self] in self?.showSettings() },

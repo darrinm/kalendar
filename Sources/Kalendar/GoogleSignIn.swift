@@ -63,10 +63,6 @@ final class GoogleSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
     }
 
     private func showError(_ error: Error) {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "Couldn't sign in to Google"
-        alert.informativeText = error.localizedDescription
-        alert.runModal()
+        Dialogs.error("Couldn't sign in to Google", error.localizedDescription)
     }
 }

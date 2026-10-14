@@ -12,6 +12,12 @@ final class MeetWithWindowController {
 
     init(model: MeetWithModel) { self.model = model }
 
+    /// A sync changed the cache: the open window shows the user's new events; a closed one reads
+    /// them when it opens.
+    func cacheChanged() {
+        if window?.isVisible == true { model.cacheChanged() }
+    }
+
     func show() {
         if window == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: MeetWithView(model: model)))
@@ -24,7 +30,7 @@ final class MeetWithWindowController {
             window.setFrameAutosaveName("MeetWith")
             self.window = window
         }
-        model.cacheChanged()
+        model.opened()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
@@ -126,9 +132,9 @@ final class MeetWithModel {
     }
 
     private func load(_ email: String) {
-        let (week, from, to) = (weekStart, weekStart, weekEnd)
+        let (week, to) = (weekStart, weekEnd)
         Task {
-            let schedule = await Availability.load(email, from: from, to: to, accounts: accounts)
+            let schedule = await Availability.load(email, from: week, to: to, accounts: accounts)
             // the week changed or the person was removed while it loaded
             guard week == weekStart, people.contains(where: { $0.email == email }) else { return }
             schedules[email.lowercased()] = schedule
@@ -137,8 +143,13 @@ final class MeetWithModel {
 
     /// The user's own events, from the cache: timed, busy, not declined, each once (§4.3). A chosen
     /// person's calendar the user subscribes to is that person's time, not the user's.
-    func cacheChanged() {
+    /// The window opened: contacts are read again at the next search, and the user's events now.
+    func opened() {
         contacts = nil
+        cacheChanged()
+    }
+
+    func cacheChanged() {
         let theirs = Set(people.map { $0.email.lowercased() })
         var seen = Set<EventInstance.DuplicateKey>()
         mine = ((try? agenda.cache.events(from: weekStart, to: weekEnd)) ?? [])
@@ -152,9 +163,8 @@ final class MeetWithModel {
     /// Opens the new-event form at `start`: the default duration, the people invited, on the
     /// default calendar of the account in the first person's domain.
     func openSlot(_ start: Date) {
-        let domain = people.first.map { "@" + ($0.email.split(separator: "@").last?.lowercased() ?? "") }
-        let account = accounts.accounts.first { domain != nil && $0.email.lowercased().hasSuffix(domain!) } ?? accounts.accounts.first
-        guard let calendar = agenda.defaultCalendar(account: account?.email) else { return }
+        let account = people.first.map { accounts.emails(preferringDomainOf: $0.email).first } ?? accounts.accounts.first?.email
+        guard let calendar = agenda.defaultCalendar(account: account) else { return }
         var draft = EventDraft(parsed: NLParser().parse(""), account: calendar.account, calendarId: calendar.id)
         draft.summary = ""
         // the empty parse is all-day; a timed event is busy, with the calendar's default alerts
@@ -163,13 +173,7 @@ final class MeetWithModel {
         draft.reminders = Reminders()
         draft.start = start
         draft.end = start.addingTimeInterval(TimeInterval(Preferences.shared.defaultDuration * 60))
-        if !people.isEmpty {
-            // the organizer is listed with the guests, as Google does
-            draft.attendees = [Attendee(email: calendar.account, displayName: nil, isSelf: true, organizer: true,
-                                        optional: false, responseStatus: "accepted")]
-                + people.map { Attendee(email: $0.email, displayName: $0.name, isSelf: false, organizer: false,
-                                        optional: false, responseStatus: "needsAction") }
-        }
+        draft.invite(people.map { ($0.email, $0.name) })
         newEvent = EventEditorModel(newDraft: draft, agenda: agenda, writer: writer)
     }
 
@@ -300,12 +304,13 @@ private struct Legend: View {
             entry("Me", color: color(0), note: nil)
             ForEach(Array(model.people.enumerated()), id: \.element.email) { index, person in
                 let name = String((person.name ?? person.email).split(whereSeparator: { $0 == " " || $0 == "@" }).first ?? "")
-                switch model.schedules[person.email.lowercased()] {
-                case nil: entry(name, color: color(index + 1), note: "loading…")
-                case .busy: entry(name, color: color(index + 1), note: "busy times only")
-                case .unavailable: entry(name, color: color(index + 1), note: "calendar not shared")
-                case .events: entry(name, color: color(index + 1), note: nil)
+                let note: String? = switch model.schedules[person.email.lowercased()] {
+                case nil: "loading…"
+                case .busy: "busy times only"
+                case .unavailable: "calendar not shared"
+                case .events: nil
                 }
+                entry(name, color: color(index + 1), note: note)
             }
         }
         .uiFont(12)
@@ -324,7 +329,7 @@ private struct Legend: View {
 /// first). The slot under the pointer is highlighted; a click opens the new-event form there.
 private struct WeekGrid: View {
     @Bindable var model: MeetWithModel
-    @State private var hovered: (day: Int, start: Date)?
+    @State private var hover = HoverSlot()
     @State private var clicked: CGRect = .zero
 
     private let hourHeight: CGFloat = 48
@@ -381,14 +386,17 @@ private struct WeekGrid: View {
 
     private func grid(dayWidth: CGFloat) -> some View {
         // a person whose calendar Kalendar can't read gets no column; the legend says so
-        let shown = model.people.enumerated().filter { model.schedules[$0.element.email.lowercased()] != .unavailable }
-        let columns = [model.mine] + shown.map { model.schedules[$0.element.email.lowercased()]?.blocks ?? [] }
-        let colors = [color(0)] + shown.map { color($0.offset + 1) }
-        let busyOnly = [false] + shown.map {
-            if case .busy = model.schedules[$0.element.email.lowercased()] { return true } else { return false }
-        }
+        let shown = model.people.indices.map { ($0, model.schedules[model.people[$0].email.lowercased()]) }
+            .filter { $0.1 != .unavailable }
+        let columns = [model.mine] + shown.map { $0.1?.blocks ?? [] }
+        let colors = [color(0)] + shown.map { color($0.0 + 1) }
+        let busyOnly = [false] + shown.map { if case .busy = $0.1 { true } else { false } }
         let columnWidth = dayWidth / CGFloat(columns.count)
         return ZStack(alignment: .topLeading) {
+            HoverHighlight(hover: hover) { slot in
+                CGRect(x: gutter + CGFloat(slot.day) * dayWidth + 1, y: y(slot.start, in: model.days[slot.day]),
+                       width: dayWidth - 2, height: height(Preferences.shared.defaultDuration * 60))
+            }
             ForEach(0..<24, id: \.self) { hour in
                 HStack(alignment: .top, spacing: 4) {
                     Text(hourLabel(hour)).uiFont(11).foregroundStyle(Theme.muted)
@@ -402,13 +410,6 @@ private struct WeekGrid: View {
             ForEach(Array(model.days.enumerated()), id: \.element) { dayIndex, day in
                 let x = gutter + CGFloat(dayIndex) * dayWidth
                 Theme.line.frame(width: 1, height: 24 * hourHeight).offset(x: x)
-                if let hovered, hovered.day == dayIndex {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Theme.accent.opacity(0.15))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.accent, lineWidth: 1))
-                        .frame(width: dayWidth - 2, height: height(Preferences.shared.defaultDuration * 60))
-                        .offset(x: x + 1, y: y(hovered.start, in: day))
-                }
                 ForEach(Array(columns.enumerated()), id: \.offset) { column, blocks in
                     let laid = Availability.lanes(blocks.compactMap { clip($0, to: day) })
                     ForEach(Array(laid.enumerated()), id: \.offset) { _, item in
@@ -425,8 +426,11 @@ private struct WeekGrid: View {
         .contentShape(Rectangle())
         .onContinuousHover { phase in
             switch phase {
-            case .active(let point): hovered = slot(at: point, dayWidth: dayWidth)
-            case .ended: hovered = nil
+            // only a new slot redraws, and only the highlight reads `hover`
+            case .active(let point):
+                let slot = slot(at: point, dayWidth: dayWidth)
+                if slot != hover.slot { hover.slot = slot }
+            case .ended: hover.slot = nil
             }
         }
         .onTapGesture { point in
@@ -452,7 +456,7 @@ private struct WeekGrid: View {
     }
 
     /// The 30-minute slot at `point`, by day column.
-    private func slot(at point: CGPoint, dayWidth: CGFloat) -> (day: Int, start: Date)? {
+    private func slot(at point: CGPoint, dayWidth: CGFloat) -> Slot? {
         let day = Int((point.x - gutter) / dayWidth)
         guard point.x >= gutter, model.days.indices.contains(day) else { return nil }
         let seconds = Double(point.y / hourHeight) * 3600
@@ -460,8 +464,8 @@ private struct WeekGrid: View {
         guard snapped >= 0, snapped < 86400 else { return nil }
         // the clock time under the pointer, which on a daylight-saving day isn't midnight plus `snapped`
         let minutes = Int(snapped) / 60
-        return (day, Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: model.days[day])
-            ?? model.days[day])
+        return Slot(day: day, start: Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0,
+                                                           of: model.days[day]) ?? model.days[day])
     }
 
     /// The part of `block` inside `day`; nil when it doesn't touch the day.
@@ -485,6 +489,36 @@ private struct WeekGrid: View {
     private func hourLabel(_ hour: Int) -> String {
         guard hour > 0, let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) else { return "" }
         return date.formatted(.dateTime.hour())
+    }
+}
+
+/// A 30-minute slot in the week: the day's column and the start.
+private struct Slot: Equatable {
+    var day: Int
+    var start: Date
+}
+
+/// The slot under the pointer. Its own object, read only by `HoverHighlight`, so moving the pointer
+/// redraws the highlight and not the grid.
+@Observable
+private final class HoverSlot {
+    var slot: Slot?
+}
+
+private struct HoverHighlight: View {
+    let hover: HoverSlot
+    let frame: (Slot) -> CGRect
+
+    var body: some View {
+        if let slot = hover.slot {
+            let rect = frame(slot)
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Theme.accent.opacity(0.15))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.accent, lineWidth: 1))
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+                .allowsHitTesting(false)
+        }
     }
 }
 

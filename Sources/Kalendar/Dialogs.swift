@@ -39,6 +39,16 @@ enum Dialogs {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
+    /// An error from a sign-in or another action the user started.
+    static func error(_ title: String, _ message: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        accent(alert)
+        alert.runModal()
+    }
+
     /// The default button in Kalendar's accent (§8), not the system accent color.
     private static func accent(_ alert: NSAlert) {
         alert.buttons.first?.bezelColor = Theme.nsAccent

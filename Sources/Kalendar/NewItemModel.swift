@@ -92,18 +92,9 @@ final class NewItemModel {
         guard let calendar = calendar(for: parsed.calendarQuery) else { return }
         var draft = EventDraft(parsed: parsed, account: calendar.account, calendarId: calendar.id)
         if let chosenLocation { draft.location = chosenLocation }
-        // each guest once, and never the organizer again
-        var seen: Set<String> = [calendar.account.lowercased()]
-        let emails = (parsed.invitees + chosenInvitees.map(\.email)).filter { seen.insert($0.lowercased()).inserted }
-        if !emails.isEmpty {
-            // the organizer is listed with the guests, as Google does
-            draft.attendees = [Attendee(email: calendar.account, displayName: nil, isSelf: true, organizer: true,
-                                        optional: false, responseStatus: "accepted")]
-                + emails.map { email in
-                    Attendee(email: email, displayName: chosenInvitees.first { $0.email == email }?.name, isSelf: false,
-                             organizer: false, optional: false, responseStatus: "needsAction")
-                }
-        }
+        draft.invite((parsed.invitees + chosenInvitees.map(\.email)).map { email in
+            (email, chosenInvitees.first { $0.email == email }?.name)
+        })
         if let form { form.follow(draft) } else { form = EventEditorModel(newDraft: draft, agenda: agenda, writer: writer) }
 
         let previous = trigger

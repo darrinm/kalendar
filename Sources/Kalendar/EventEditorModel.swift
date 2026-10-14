@@ -46,10 +46,18 @@ final class EventEditorModel {
         original = draft
         self.draft = draft
         writer.clearError()
+        // the default video (§12); Zoom only while Kalendar is connected to it
+        let video = Preferences.shared.defaultVideo
+        self.video = video == .zoom && !Zoom.account.isConnected ? .none : video
+        self.draft.addGoogleMeet = self.video == .googleMeet
+        original.addGoogleMeet = self.draft.addGoogleMeet
     }
 
     /// The input changed: fields the user hasn't edited by hand take the new parse (§5.2).
     func follow(_ parsed: EventDraft) {
+        var parsed = parsed
+        // the default video is the baseline, so it isn't counted as a change by hand
+        parsed.addGoogleMeet = original.addGoogleMeet
         draft = draft.following(parsed, previousParse: original)
         original = parsed
     }
@@ -59,39 +67,53 @@ final class EventEditorModel {
 
     // MARK: Video conferencing (§5.1)
 
-    enum Video { case none, googleMeet, zoom }
+    typealias Video = Preferences.Video
 
+    private(set) var video: Video = .none
     /// The Zoom join link this form added to the draft.
     private(set) var zoomLink: String?
     /// A Zoom meeting is being created.
     private(set) var creatingZoom = false
     private(set) var videoError: String?
 
-    var video: Video { draft.addGoogleMeet ? .googleMeet : zoomLink != nil ? .zoom : .none }
-
     /// Google creates a Meet conference when the event is written. A Zoom meeting is created in the
-    /// user's Zoom account now, and its link goes in the location (when empty) and the notes, where
-    /// the Join button and other calendar apps find it.
+    /// user's Zoom account: for a new event when it is added (`commit`), from its final title and
+    /// time, so an abandoned form leaves no meeting behind; for an existing event now. Its link goes
+    /// in the location (when empty) and the notes, where the Join button and other apps find it.
     func setVideo(_ choice: Video) {
         guard !creatingZoom else { return }
         videoError = nil
+        video = choice
         draft.addGoogleMeet = choice == .googleMeet
         if choice != .zoom { removeZoomLink() }
-        guard choice == .zoom, zoomLink == nil else { return }
+        if choice == .zoom && !isNew { Task { await attachZoom() } }
+    }
+
+    /// Add Event: hands the draft to `insert`, after creating the Zoom meeting when Zoom is chosen.
+    /// When that fails, the error shows under the video row and nothing is added.
+    func commit(_ insert: @escaping (EventDraft) -> Void) {
+        guard video == .zoom, zoomLink == nil else { return insert(draft) }
+        Task { if await attachZoom() { insert(draft) } }
+    }
+
+    /// Creates the Zoom meeting and puts its link in the draft; false when Zoom refused.
+    @discardableResult
+    private func attachZoom() async -> Bool {
+        guard zoomLink == nil else { return true }
         creatingZoom = true
-        let minutes = Int(draft.end.timeIntervalSince(draft.start) / 60)
-        Task {
-            defer { creatingZoom = false }
-            do {
-                let meeting = try await Zoom.account.createMeeting(topic: draft.summary, start: draft.start,
-                                                                   minutes: minutes, timeZone: draft.timeZone)
-                zoomLink = meeting.joinURL
-                if draft.location.isEmpty { draft.location = meeting.joinURL }
-                let note = Self.zoomNote(meeting.joinURL)
-                draft.notes = draft.notes.isEmpty ? note : "\(note)\n\n\(draft.notes)"
-            } catch {
-                videoError = error.localizedDescription
-            }
+        defer { creatingZoom = false }
+        do {
+            let meeting = try await Zoom.account.createMeeting(
+                topic: draft.summary, start: draft.start, minutes: Int(draft.end.timeIntervalSince(draft.start) / 60),
+                timeZone: draft.timeZone)
+            zoomLink = meeting.joinURL
+            if draft.location.isEmpty { draft.location = meeting.joinURL }
+            let note = Self.zoomNote(meeting.joinURL)
+            draft.notes = draft.notes.isEmpty ? note : "\(note)\n\n\(draft.notes)"
+            return true
+        } catch {
+            videoError = error.localizedDescription
+            return false
         }
     }
 

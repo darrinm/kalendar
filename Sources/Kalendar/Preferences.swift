@@ -13,6 +13,10 @@ final class Preferences {
     enum IconStyle: String, CaseIterable {
         case iconOnly = "Icon only", date = "Date", nextTitle = "Next event title", nextCountdown = "Next event + countdown"
     }
+    /// The video conferencing a new event starts with (§5.1, §12).
+    enum Video: String, CaseIterable {
+        case none = "None", googleMeet = "Google Meet", zoom = "Zoom"
+    }
     enum TextSize: String, CaseIterable {
         case small = "Small", normal = "Normal", large = "Large"
         var scale: CGFloat { switch self { case .small: 0.9; case .normal: 1; case .large: 1.15 } }
@@ -67,6 +71,7 @@ final class Preferences {
     var playSounds: Bool { didSet { save(playSounds, "playSounds") } }
     var goToTodayAfterAdding: Bool { didSet { save(goToTodayAfterAdding, "goToTodayAfterAdding") } }
     var showAlerts: Bool { didSet { save(showAlerts, "showAlerts") } }
+    var defaultVideo: Video { didSet { save(defaultVideo.rawValue, "defaultVideo") } }
 
     // Appearance
     var iconStyle: IconStyle { didSet { save(iconStyle.rawValue, "iconStyle") } }
@@ -105,6 +110,7 @@ final class Preferences {
         playSounds = value("playSounds", true)
         goToTodayAfterAdding = value("goToTodayAfterAdding", true)
         showAlerts = value("showAlerts", true)
+        defaultVideo = Video(rawValue: value("defaultVideo", "")) ?? .none
         iconStyle = IconStyle(rawValue: value("iconStyle", "")) ?? .date
         colorIcon = value("colorIcon", false)
         textSize = TextSize(rawValue: value("textSize", "")) ?? .normal

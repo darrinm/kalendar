@@ -420,7 +420,10 @@ final class PopoverModel {
 
     /// Enter or Add Event (§5.4): adds, clears, and returns to today after ~2 s.
     func addNewItem() {
-        guard newItem.add() else { return }
+        _ = newItem.add { [weak self] in self?.itemAdded() }
+    }
+
+    private func itemAdded() {
         input = ""
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)

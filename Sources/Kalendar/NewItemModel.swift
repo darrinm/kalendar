@@ -204,21 +204,30 @@ final class NewItemModel {
 
     // MARK: Commit
 
-    /// Adds the event (§5.4). Returns false when there is nothing to add.
-    func add() -> Bool {
+    /// Adds the item (§5.4) and then calls `added`; an event with Zoom chosen waits for its meeting
+    /// (`EventEditorModel.commit`). Returns false when there is nothing to add.
+    func add(then added: @escaping () -> Void) -> Bool {
         if let taskForm, taskForm.canAdd {
             let t = taskForm.draft
             writer.insertTask(title: t.title.trimmingCharacters(in: .whitespaces), notes: t.notes, due: t.due,
                               account: t.account, listId: t.listId)
+            finish(added)
         } else if let form, form.canAdd {
-            writer.insert(form.draft)
+            form.commit { [weak self] draft in
+                self?.writer.insert(draft)
+                self?.finish(added)
+            }
         } else {
             return false
         }
+        return true
+    }
+
+    private func finish(_ added: () -> Void) {
         if Preferences.shared.playSounds { NSSound(named: "Pop")?.play() }
         reset()
         defaultDay = nil
-        return true
+        added()
     }
 
     /// Whether cancelling should ask first (§8.3): the form was edited by hand, not just typed into.

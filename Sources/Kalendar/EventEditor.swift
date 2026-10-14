@@ -564,7 +564,7 @@ private struct VideoMenu: View {
                 Text("Creating Zoom meeting…").foregroundStyle(Theme.muted)
             }
         } else {
-            Menu(label) {
+            Menu(model.video.rawValue) {
                 Button("None") { model.setVideo(.none) }
                 Button("Google Meet") { model.setVideo(.googleMeet) }
                 if ZoomOAuth.isConfigured {
@@ -576,14 +576,6 @@ private struct VideoMenu: View {
                 }
             }
             .fixedSize()
-        }
-    }
-
-    private var label: String {
-        switch model.video {
-        case .none: "None"
-        case .googleMeet: "Google Meet"
-        case .zoom: "Zoom"
         }
     }
 }

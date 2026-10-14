@@ -179,10 +179,13 @@ final class MeetWithModel {
 
     func addEvent() {
         guard let form = newEvent, form.canAdd else { return }
-        writer.insert(form.draft)
-        if Preferences.shared.playSounds { NSSound(named: "Pop")?.play() }
-        newEvent = nil
-        cacheChanged()
+        form.commit { [weak self] draft in
+            guard let self else { return }
+            writer.insert(draft)
+            if Preferences.shared.playSounds { NSSound(named: "Pop")?.play() }
+            newEvent = nil
+            cacheChanged()
+        }
     }
 }
 

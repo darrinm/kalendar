@@ -280,6 +280,7 @@ private struct CalendarsSettings: View {
 }
 
 private struct AccountsSettings: View {
+    @Bindable private var prefs = Preferences.shared
     let accounts: AccountStore
     let cache: CalendarCache
     let engine: SyncEngine
@@ -303,6 +304,9 @@ private struct AccountsSettings: View {
             Button("Add Account…") { signIn(nil) }
             if ZoomOAuth.isConfigured {
                 Section("Video conferencing") {
+                    Picker("New events", selection: $prefs.defaultVideo) {
+                        ForEach(Preferences.Video.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
                     LabeledContent("Zoom") {
                         if Zoom.account.isConnected {
                             Button("Disconnect") { Zoom.account.disconnect() }

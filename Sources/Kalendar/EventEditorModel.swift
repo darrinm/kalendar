@@ -46,10 +46,8 @@ final class EventEditorModel {
         original = draft
         self.draft = draft
         writer.clearError()
-        // the default video (§12); Zoom only while Kalendar is connected to it
-        let video = Preferences.shared.defaultVideo
-        self.video = video == .zoom && !Zoom.account.isConnected ? .none : video
-        originalVideo = self.video
+        video = Preferences.shared.newEventVideo   // §12
+        originalVideo = video
         self.draft.addGoogleMeet = self.video == .googleMeet
         original.addGoogleMeet = self.draft.addGoogleMeet
     }

@@ -302,22 +302,19 @@ private struct AccountsSettings: View {
                 }
             }
             Button("Add Account…") { signIn(nil) }
-            if ZoomOAuth.isConfigured {
-                Section("Video conferencing") {
-                    Picker("New events", selection: $prefs.defaultVideo) {
-                        ForEach(Preferences.Video.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    // the default applies Zoom only while connected (EventEditorModel)
-                    if prefs.defaultVideo == .zoom && !Zoom.account.isConnected {
-                        Text("New events start with None until Zoom is connected.")
-                            .foregroundStyle(.secondary)
-                    }
-                    LabeledContent("Zoom") {
-                        if Zoom.account.isConnected {
-                            Button("Disconnect") { Zoom.account.disconnect() }
-                        } else {
-                            Button("Connect…") { Zoom.signIn() }
-                        }
+            Section("Video conferencing") {
+                Picker("New events", selection: $prefs.defaultVideo) {
+                    ForEach(Preferences.Video.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                if prefs.newEventVideo != prefs.defaultVideo {
+                    Text("New events start with None until Zoom is connected.")
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Zoom") {
+                    if Zoom.account.isConnected {
+                        Button("Disconnect") { Zoom.account.disconnect() }
+                    } else {
+                        Button("Connect…") { Zoom.signIn() }
                     }
                 }
             }

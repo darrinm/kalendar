@@ -72,6 +72,8 @@ final class Preferences {
     var goToTodayAfterAdding: Bool { didSet { save(goToTodayAfterAdding, "goToTodayAfterAdding") } }
     var showAlerts: Bool { didSet { save(showAlerts, "showAlerts") } }
     var defaultVideo: Video { didSet { save(defaultVideo.rawValue, "defaultVideo") } }
+    /// What a new event starts with: the default, except None while Zoom isn't connected.
+    var newEventVideo: Video { defaultVideo == .zoom && !Zoom.account.isConnected ? .none : defaultVideo }
 
     // Appearance
     var iconStyle: IconStyle { didSet { save(iconStyle.rawValue, "iconStyle") } }

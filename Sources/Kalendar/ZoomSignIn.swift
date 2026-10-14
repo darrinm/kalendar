@@ -15,7 +15,7 @@ enum Zoom {
 
     /// Starts a sign-in; does nothing while one is running.
     static func signIn() {
-        guard ZoomOAuth.isConfigured, listener == nil,
+        guard listener == nil,
               let port = NWEndpoint.Port(rawValue: ZoomOAuth.redirectPort) else { return }
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: port)

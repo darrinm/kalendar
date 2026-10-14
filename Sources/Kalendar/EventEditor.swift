@@ -553,7 +553,7 @@ struct WriteError: View {
     }
 }
 
-/// Add video conferencing (§5.1): None, Google Meet, or Zoom (when this build has a Zoom app).
+/// Add video conferencing (§5.1): None, Google Meet, or Zoom.
 private struct VideoMenu: View {
     let model: EventEditorModel
 
@@ -567,12 +567,10 @@ private struct VideoMenu: View {
             Menu(model.video.rawValue) {
                 Button("None") { model.setVideo(.none) }
                 Button("Google Meet") { model.setVideo(.googleMeet) }
-                if ZoomOAuth.isConfigured {
-                    if Zoom.account.isConnected {
-                        Button("Zoom") { model.setVideo(.zoom) }
-                    } else {
-                        Button("Connect Zoom…") { Zoom.signIn() }
-                    }
+                if Zoom.account.isConnected {
+                    Button("Zoom") { model.setVideo(.zoom) }
+                } else {
+                    Button("Connect Zoom…") { Zoom.signIn() }
                 }
             }
             .fixedSize()

@@ -99,5 +99,10 @@ Decisions (2026-10-14, from the user): a separate window; other people's event t
 - A click on Thursday 2:00 PM opened the form: 2:00–3:00 PM, darrin@playful.software, 10-minute default alert, me + Mike invited. No event was added.
 - Not seen: a person with busy times only (every shared colleague tried exposes titles).
 
-## Next: Zoom on new events (requested 2026-10-14, after Meet With)
-- [ ] "Add video conferencing" on the event form, with Zoom (screenshot: Google's "Add video conferencing" dropdown).
+## Video conferencing on events (requested 2026-10-14)
+Decision (user): Zoom "whatever Google Calendar is doing" (a meeting per event in the Playful Software Zoom account), plus Google Meet.
+- [x] `video` row on the event form: None / Google Meet / Zoom.
+- [x] Google Meet through `conferenceData.createRequest`; the writer refetches after the write (Google changes the etag when it attaches the conference). Verified by `-selfTest` against Google: Meet link created, the edit after it saved.
+- [x] Zoom: public-client PKCE sign-in through a loopback redirect, `ZoomAccount` (Keychain refresh token, rotation, 401 retry), meeting creation, Settings › Accounts › Video conferencing. Unit-tested.
+- [ ] **Blocked:** `ZoomOAuth.clientID` is empty. Needs a Zoom app registered in the Playful Software Zoom account (General app, user-managed; redirect `http://127.0.0.1:47823/zoom`; scope `meeting:write:meeting`; App Credentials › Use Public Client OAuth). Then set the ID, connect, and create a test meeting.
+- [ ] The privacy policy (massena.com/kalendar/privacy) covers Google only; Zoom sends event titles and times to Zoom and keeps a Zoom token in the Keychain.

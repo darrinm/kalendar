@@ -120,6 +120,13 @@ struct EventEditor: View {
                 Row("time zone") { TimeZoneMenu(identifier: $model.draft.timeZone).disabled(readOnly) }
             }
             Row("calendar") { CalendarMenu(model: model) }
+            // an event that already has a call keeps it; its Join button is above
+            if !readOnly && (model.isNew || model.event.conferenceURL == nil) {
+                Row("video") { VideoMenu(model: model) }
+                if let error = model.videoError {
+                    Text(error).uiFont(11).foregroundStyle(Theme.bad).padding(.leading, labelWidth + 8)
+                }
+            }
             Row("color") { ColorMenu(model: model) }
             if !readOnly {
                 Row("repeat") { RepeatMenu(model: model) }
@@ -542,6 +549,41 @@ struct WriteError: View {
                 .foregroundStyle(Theme.bad)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(padding)
+        }
+    }
+}
+
+/// Add video conferencing (§5.1): None, Google Meet, or Zoom (when this build has a Zoom app).
+private struct VideoMenu: View {
+    let model: EventEditorModel
+
+    var body: some View {
+        if model.creatingZoom {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Creating Zoom meeting…").foregroundStyle(Theme.muted)
+            }
+        } else {
+            Menu(label) {
+                Button("None") { model.setVideo(.none) }
+                Button("Google Meet") { model.setVideo(.googleMeet) }
+                if ZoomOAuth.isConfigured {
+                    if Zoom.account.isConnected {
+                        Button("Zoom") { model.setVideo(.zoom) }
+                    } else {
+                        Button("Connect Zoom…") { Zoom.signIn() }
+                    }
+                }
+            }
+            .fixedSize()
+        }
+    }
+
+    private var label: String {
+        switch model.video {
+        case .none: "None"
+        case .googleMeet: "Google Meet"
+        case .zoom: "Zoom"
         }
     }
 }

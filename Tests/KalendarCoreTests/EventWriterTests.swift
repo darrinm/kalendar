@@ -364,6 +364,42 @@ final class EventWriterTests: XCTestCase {
         XCTAssertEqual((post.json?["reminders"] as? [String: Any])?["useDefault"] as? Bool, true)
     }
 
+    func testGoogleMeetIsRequestedWithConferenceDataVersion() async throws {
+        var draft = EventDraft(parsed: NLParser(now: now).parse("Sync tomorrow 3pm"), account: "me@example.com",
+                               calendarId: "primary")
+        google.handler = { _, _ in (200, self.serverEvent("g1", title: "Sync")) }
+        writer.insert(draft)
+        draft.addGoogleMeet = true
+        writer.insert(draft)
+        await writer.flush()
+        let (plain, meet) = (google.requests[0], google.requests[1])
+        XCTAssertNil(plain.json?["conferenceData"])
+        XCTAssertFalse(plain.url!.query!.contains("conferenceDataVersion"))
+        let create = try XCTUnwrap((meet.json?["conferenceData"] as? [String: Any])?["createRequest"] as? [String: Any])
+        XCTAssertEqual((create["conferenceSolutionKey"] as? [String: String])?["type"], "hangoutsMeet")
+        XCTAssertNotNil(create["requestId"] as? String)
+        XCTAssertTrue(meet.url!.query!.contains("conferenceDataVersion=1"))
+    }
+
+    /// Google changes the event's etag when it attaches the conference, after answering the insert.
+    func testEditAfterAddingMeetSendsTheEtagFetchedAfterTheInsert() async throws {
+        var draft = EventDraft(parsed: NLParser(now: now).parse("Sync tomorrow 3pm"), account: "me@example.com",
+                               calendarId: "primary")
+        draft.addGoogleMeet = true
+        google.handler = { r, _ in (200, self.serverEvent("g1", title: "Sync", etag: r.httpMethod == "POST" ? "\"1\"" : "\"2\"")) }
+        writer.insert(draft)
+        await writer.flush()
+        XCTAssertEqual(google.requests.compactMap(\.httpMethod), ["POST", "GET"])
+        let cached = try XCTUnwrap(cache.event(account: "me@example.com", calendarId: "primary", id: "g1"))
+        XCTAssertEqual(cached.etag, "\"2\"")
+        var edited = EventDraft(cached, recurrence: nil)
+        edited.summary = "Sync (moved)"
+        writer.save(cached, original: EventDraft(cached, recurrence: nil), draft: edited, scope: .occurrence, series: nil)
+        await writer.flush()
+        XCTAssertEqual(google.requests.last?.value(forHTTPHeaderField: "If-Match"), "\"2\"")
+        XCTAssertNil(writer.error)
+    }
+
     /// The live form follows new input except where the user changed a field by hand (§5.2).
     func testLiveFormKeepsHandEdits() {
         let parser = NLParser(now: now)

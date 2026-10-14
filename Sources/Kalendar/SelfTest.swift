@@ -70,7 +70,9 @@ struct SelfTest {
         let title = Self.eventPrefix + "\(Int(Date().timeIntervalSince1970))"
         var parsed = NLParser(defaultDuration: 1800).parse("\(title) tomorrow 7am")
         parsed.title = title
-        writer.insert(EventDraft(parsed: parsed, account: calendar.account, calendarId: calendar.id))
+        var draft = EventDraft(parsed: parsed, account: calendar.account, calendarId: calendar.id)
+        draft.addGoogleMeet = true
+        writer.insert(draft)
         await writer.flush()
         guard let created = try? cache.events(account: calendar.account, calendarId: calendar.id).first(where: { $0.summary == title }) else {
             check(false, "insert: Google's copy replaces the placeholder in the cache")
@@ -83,6 +85,11 @@ struct SelfTest {
         }
         var (status, g) = await googleEvent(calendar.account, calendar.id, created.id)
         check(status == 200 && g["summary"] as? String == title, "insert: Google has the event")
+        check((g["hangoutLink"] as? String)?.hasPrefix("https://meet.google.com/") == true,
+              "insert: Google created a Meet link (\(g["hangoutLink"] as? String ?? "none"))")
+        check(created.conferenceURL != nil || ((try? cache.event(account: calendar.account, calendarId: calendar.id,
+                                                                  id: created.id))??.conferenceURL) != nil,
+              "insert: the cached event has the Meet link")
 
         let original = EventDraft(created, recurrence: nil)
         var edited = original

@@ -22,6 +22,8 @@ public struct EventDraft: Equatable {
     /// The series rule; nil for a one-off event.
     public var recurrence: RecurrenceRule?
     public var attendees: [Attendee]
+    /// Asks Google to create a Meet conference for the event when it is written (§5.1).
+    public var addGoogleMeet = false
 
     public init(_ e: EventInstance, recurrence: RecurrenceRule?) {
         summary = e.summary == "(No title)" ? "" : e.summary
@@ -103,6 +105,7 @@ public struct EventDraft: Equatable {
             body["recurrence"] = recurrence.map { [$0.rrule(calendar: calendar, allDay: allDay)] } ?? []
         }
         if attendees != original.attendees { body["attendees"] = attendees.map(Self.attendee) }
+        if addGoogleMeet && !original.addGoogleMeet { body["conferenceData"] = Self.meetRequest() }
         return body.isEmpty ? nil : body
     }
 
@@ -122,7 +125,19 @@ public struct EventDraft: Equatable {
         if let colorId { body["colorId"] = colorId }
         if let recurrence { body["recurrence"] = [recurrence.rrule(calendar: calendar, allDay: allDay)] }
         if guests && !attendees.isEmpty { body["attendees"] = attendees.map(Self.attendee) }
+        if addGoogleMeet { body["conferenceData"] = Self.meetRequest() }
         return body
+    }
+
+    /// Google creates the Meet conference for a write carrying this and `conferenceDataVersion=1`.
+    /// The request id only has to be unique per request.
+    static func meetRequest() -> [String: Any] {
+        ["createRequest": ["requestId": UUID().uuidString, "conferenceSolutionKey": ["type": "hangoutsMeet"]]]
+    }
+
+    /// The query a write needs: Google ignores `conferenceData` without `conferenceDataVersion=1`.
+    public static func conferenceQuery(_ body: [String: Any]?) -> [String: String] {
+        body?["conferenceData"] == nil ? [:] : ["conferenceDataVersion": "1"]
     }
 
     /// Writing `date` clears `dateTime` and the reverse, so switching all-day on or off patches cleanly.

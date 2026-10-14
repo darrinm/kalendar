@@ -301,6 +301,17 @@ private struct AccountsSettings: View {
                 }
             }
             Button("Add Account…") { signIn(nil) }
+            if ZoomOAuth.isConfigured {
+                Section("Video conferencing") {
+                    LabeledContent("Zoom") {
+                        if Zoom.account.isConnected {
+                            Button("Disconnect") { Zoom.account.disconnect() }
+                        } else {
+                            Button("Connect…") { Zoom.signIn() }
+                        }
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
     }

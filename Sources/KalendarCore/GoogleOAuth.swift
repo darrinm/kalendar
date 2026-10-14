@@ -129,7 +129,7 @@ public enum GoogleOAuth {
         form(revokeEndpoint, ["token": token])
     }
 
-    private static func form(_ url: URL, _ fields: [String: String]) -> URLRequest {
+    static func form(_ url: URL, _ fields: [String: String]) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")

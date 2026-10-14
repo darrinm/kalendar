@@ -57,6 +57,53 @@ final class EventEditorModel {
     /// The new-item form's Add Event needs a title.
     var canAdd: Bool { !draft.summary.trimmingCharacters(in: .whitespaces).isEmpty }
 
+    // MARK: Video conferencing (§5.1)
+
+    enum Video { case none, googleMeet, zoom }
+
+    /// The Zoom join link this form added to the draft.
+    private(set) var zoomLink: String?
+    /// A Zoom meeting is being created.
+    private(set) var creatingZoom = false
+    private(set) var videoError: String?
+
+    var video: Video { draft.addGoogleMeet ? .googleMeet : zoomLink != nil ? .zoom : .none }
+
+    /// Google creates a Meet conference when the event is written. A Zoom meeting is created in the
+    /// user's Zoom account now, and its link goes in the location (when empty) and the notes, where
+    /// the Join button and other calendar apps find it.
+    func setVideo(_ choice: Video) {
+        guard !creatingZoom else { return }
+        videoError = nil
+        draft.addGoogleMeet = choice == .googleMeet
+        if choice != .zoom { removeZoomLink() }
+        guard choice == .zoom, zoomLink == nil else { return }
+        creatingZoom = true
+        let minutes = Int(draft.end.timeIntervalSince(draft.start) / 60)
+        Task {
+            defer { creatingZoom = false }
+            do {
+                let meeting = try await Zoom.account.createMeeting(topic: draft.summary, start: draft.start,
+                                                                   minutes: minutes, timeZone: draft.timeZone)
+                zoomLink = meeting.joinURL
+                if draft.location.isEmpty { draft.location = meeting.joinURL }
+                draft.notes = draft.notes.isEmpty ? "Join Zoom Meeting\n\(meeting.joinURL)"
+                                                  : "Join Zoom Meeting\n\(meeting.joinURL)\n\n\(draft.notes)"
+            } catch {
+                videoError = error.localizedDescription
+            }
+        }
+    }
+
+    private func removeZoomLink() {
+        guard let link = zoomLink else { return }
+        if draft.location == link { draft.location = "" }
+        for added in ["Join Zoom Meeting\n\(link)\n\n", "Join Zoom Meeting\n\(link)"] {
+            draft.notes = draft.notes.replacingOccurrences(of: added, with: "")
+        }
+        zoomLink = nil
+    }
+
     private func loadSeries() async {
         guard let series = await writer.series(of: event) else { return }
         self.series = series

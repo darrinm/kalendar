@@ -419,6 +419,42 @@ final class EventWriterTests: XCTestCase {
         XCTAssertNil(writer.error)
     }
 
+    /// "Don't Send" (§8.6): no email for a change or a delete of an event the user organizes with guests.
+    func testDontSendWritesWithoutEmailingGuests() async throws {
+        let guests = [Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: true, optional: false,
+                               responseStatus: "accepted"),
+                      Attendee(email: "kate@example.com", displayName: nil, isSelf: false, organizer: false, optional: false,
+                               responseStatus: "accepted")]
+        let e = event(attendees: guests)
+        try cache.upsert([e])
+        google.handler = { r, _ in r.httpMethod == "DELETE" ? (204, "") : (200, self.serverEvent("e1", title: "Standup")) }
+        let original = EventDraft(e, recurrence: nil)
+        var draft = original
+        draft.start = start.addingTimeInterval(3600)
+        draft.end = draft.start.addingTimeInterval(1800)
+        writer.save(e, original: original, draft: draft, scope: .occurrence, series: nil, notifyGuests: true)
+        await writer.flush()
+        writer.save(e, original: original, draft: draft, scope: .occurrence, series: nil, notifyGuests: false)
+        await writer.flush()
+        writer.delete(e, scope: .occurrence, notifyGuests: false)
+        await writer.flush()
+        XCTAssertEqual(google.requests.map { URLComponents(url: $0.url!, resolvingAgainstBaseURL: false)!
+            .queryItems!.first { $0.name == "sendUpdates" }!.value! }, ["all", "none", "none"])
+    }
+
+    /// Alerts, color and busy/free are the user's own; guests hear only about the rest.
+    func testOnlySharedFieldsAreChangesGuestsSee() {
+        let original = EventDraft(event(), recurrence: nil)
+        var personal = original
+        personal.reminders = Reminders(useDefault: false, minutes: [5])
+        personal.colorId = "3"
+        personal.busy = false
+        XCTAssertFalse(personal.changesWhatGuestsSee(from: original))
+        var shared = personal
+        shared.location = "Room 4"
+        XCTAssertTrue(shared.changesWhatGuestsSee(from: original))
+    }
+
     /// The live form follows new input except where the user changed a field by hand (§5.2).
     func testLiveFormKeepsHandEdits() {
         let parser = NLParser(now: now)

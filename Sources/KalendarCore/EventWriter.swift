@@ -66,7 +66,7 @@ public final class EventWriter {
     /// `notifyGuests` false: Google emails nobody, even for an event the user organizes with guests.
     public func save(_ event: EventInstance, original: EventDraft, draft: EventDraft, scope: Scope, series: Series?,
                      notifyGuests: Bool = true) {
-        let sendUpdates = notifyGuests ? Self.sendUpdates(event) : "none"
+        let sendUpdates = Self.sendUpdates(event, editedTo: draft, notify: notifyGuests)
         let target = Self.target(event, scope)
         let toSeries = target.series != nil
         let fields = draft.patchBody(from: original, seriesTimes: toSeries ? series.map { ($0.start, $0.end) } : nil)
@@ -169,7 +169,7 @@ public final class EventWriter {
 
     public func delete(_ event: EventInstance, scope: Scope, notifyGuests: Bool = true) {
         let target = Self.target(event, scope)
-        enqueue(queued("DELETE", event, id: target.id, query: ["sendUpdates": notifyGuests ? Self.sendUpdates(event) : "none"]))
+        enqueue(queued("DELETE", event, id: target.id, query: ["sendUpdates": Self.sendUpdates(event, notify: notifyGuests)]))
         try? cache.deleteEvent(calendarId: event.calendarId, id: event.id, series: target.series)
         // an invitation someone else organized cannot be restored by Kalendar (§8.2)
         undoableDelete = event.isInvitation ? nil : event
@@ -219,12 +219,16 @@ public final class EventWriter {
     }
 
     /// Guests hear about changes to events the user organizes; nobody hears about changes to an
-    /// event without guests or to the user's copy of someone else's invitation.
-    public static func emailsGuests(_ event: EventInstance) -> Bool {
-        event.organizerSelf && event.attendees.count > 1
+    /// event without guests or to the user's copy of someone else's invitation. `draft` is the
+    /// edit: guests it adds to an event that had none are invited.
+    public static func emailsGuests(_ event: EventInstance, editedTo draft: EventDraft? = nil) -> Bool {
+        event.organizerSelf && max(event.attendees.count, draft?.attendees.count ?? 0) > 1
     }
 
-    static func sendUpdates(_ event: EventInstance) -> String { emailsGuests(event) ? "all" : "none" }
+    /// `notify` false is the user's Don't Send (§8.6).
+    static func sendUpdates(_ event: EventInstance, editedTo draft: EventDraft? = nil, notify: Bool = true) -> String {
+        notify && emailsGuests(event, editedTo: draft) ? "all" : "none"
+    }
 
     /// The event a write goes to: this occurrence, or for `.series` the master; `series` is the
     /// master id to refetch once the write lands.

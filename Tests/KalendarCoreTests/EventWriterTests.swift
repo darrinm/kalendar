@@ -442,6 +442,25 @@ final class EventWriterTests: XCTestCase {
             .queryItems!.first { $0.name == "sendUpdates" }!.value! }, ["all", "none", "none"])
     }
 
+    /// Guests added to an event that had none are invited (§8.6).
+    func testAddedGuestsAreInvited() async throws {
+        let e = event()
+        try cache.upsert([e])
+        google.handler = { _, _ in (200, self.serverEvent("e1", title: "Standup")) }
+        let original = EventDraft(e, recurrence: nil)
+        var draft = original
+        draft.attendees = [Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: true, optional: false,
+                                    responseStatus: "accepted"),
+                           Attendee(email: "kate@example.com", displayName: nil, isSelf: false, organizer: false,
+                                    optional: false, responseStatus: "needsAction")]
+        XCTAssertFalse(EventWriter.emailsGuests(e))
+        XCTAssertTrue(EventWriter.emailsGuests(e, editedTo: draft))
+        writer.save(e, original: original, draft: draft, scope: .occurrence, series: nil)
+        await writer.flush()
+        XCTAssertEqual(google.requests.map { URLComponents(url: $0.url!, resolvingAgainstBaseURL: false)!
+            .queryItems!.first { $0.name == "sendUpdates" }!.value! }, ["all"])
+    }
+
     /// Alerts, color and busy/free are the user's own; guests hear only about the rest.
     func testOnlySharedFieldsAreChangesGuestsSee() {
         let original = EventDraft(event(), recurrence: nil)

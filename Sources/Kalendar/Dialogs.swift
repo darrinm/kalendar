@@ -29,9 +29,10 @@ enum Dialogs {
 
     /// "Send update emails to guests?" before changing or deleting an event the user organizes that
     /// has guests, as Google Calendar asks. True for Send, false for Don't Send, nil for Cancel. An
-    /// event Google wouldn't email anyone about needs no question: true.
-    static func notifyGuests(about event: EventInstance, deleting: Bool = false) -> Bool? {
-        guard EventWriter.emailsGuests(event) else { return true }
+    /// event Google wouldn't email anyone about needs no question: true. `draft` is the edit, which
+    /// may add the first guests.
+    static func notifyGuests(about event: EventInstance, editedTo draft: EventDraft? = nil, deleting: Bool = false) -> Bool? {
+        guard EventWriter.emailsGuests(event, editedTo: draft) else { return true }
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = deleting ? "Send cancellation emails to guests?" : "Send update emails to guests?"

@@ -153,7 +153,7 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
         await MainActor.run {
             switch action {
             case Self.joinAction:
-                if let url { NSWorkspace.shared.open(url) }
+                if let url { Meeting.join(url) }
             case Self.snoozeAction:
                 let base = identifier.hasPrefix(Self.snoozePrefix) ? identifier : Self.snoozePrefix + identifier
                 center.add(UNNotificationRequest(identifier: base, content: content,

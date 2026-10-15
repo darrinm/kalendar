@@ -98,6 +98,7 @@ final class EventParsingTests: XCTestCase {
                        "https://teams.microsoft.com/l/meetup-join/19%3a")
         XCTAssertNil(ConferenceDetector.url(in: ["https://example.com/meeting", "Room 4"]))
         XCTAssertEqual(ConferenceDetector.serviceName(for: "https://us02web.zoom.us/j/1"), "Zoom")
+        XCTAssertEqual(ConferenceDetector.serviceName(for: "https://notzoom.us/j/1"), "Video")
         XCTAssertEqual(ConferenceDetector.serviceName(for: "https://meet.google.com/a"), "Google Meet")
     }
 

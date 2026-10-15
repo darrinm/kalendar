@@ -74,6 +74,8 @@ final class Preferences {
     var defaultVideo: Video { didSet { save(defaultVideo.rawValue, "defaultVideo") } }
     /// What a new event starts with: the default, except None while Zoom isn't connected.
     var newEventVideo: Video { defaultVideo == .zoom && !Zoom.account.isConnected ? .none : defaultVideo }
+    /// Join opens Zoom meetings in the browser rather than the Zoom app.
+    var zoomInBrowser: Bool { didSet { save(zoomInBrowser, "zoomInBrowser") } }
 
     // Appearance
     var iconStyle: IconStyle { didSet { save(iconStyle.rawValue, "iconStyle") } }
@@ -113,6 +115,7 @@ final class Preferences {
         goToTodayAfterAdding = value("goToTodayAfterAdding", true)
         showAlerts = value("showAlerts", true)
         defaultVideo = Video(rawValue: value("defaultVideo", "")) ?? .none
+        zoomInBrowser = value("zoomInBrowser", false)
         iconStyle = IconStyle(rawValue: value("iconStyle", "")) ?? .date
         colorIcon = value("colorIcon", false)
         textSize = TextSize(rawValue: value("textSize", "")) ?? .normal

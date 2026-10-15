@@ -108,7 +108,7 @@ final class StatusItemController: NSObject {
 
     @objc private func join() {
         guard let joinTarget else { return }
-        NSWorkspace.shared.open(joinTarget.url)
+        Meeting.join(joinTarget.url)
         joinedKey = joinTarget.key
         redrawJoin()
     }

@@ -177,7 +177,7 @@ private struct EventRow: View {
             }
             Spacer(minLength: 4)
             if showsJoin, let link = event.conferenceURL.flatMap(URL.init(string:)) {
-                Button("Join") { NSWorkspace.shared.open(link) }
+                Button("Join") { Meeting.join(link) }
                     .buttonStyle(JoinButtonStyle())
                     .accessibilityLabel("Join \(ConferenceDetector.serviceName(for: link.absoluteString)) meeting")
             }
@@ -193,7 +193,7 @@ private struct EventRow: View {
         .accessibilityValue(eventAccessibilityValue(event, isSelected: isSelected))
         .accessibilityActions {
             if let link = event.conferenceURL.flatMap(URL.init(string:)) {
-                Button("Join \(ConferenceDetector.serviceName(for: link.absoluteString)) Meeting") { NSWorkspace.shared.open(link) }
+                Button("Join \(ConferenceDetector.serviceName(for: link.absoluteString)) Meeting") { Meeting.join(link) }
             }
         }
     }
@@ -226,7 +226,7 @@ private struct EventContextMenu: View {
             Divider()
         }
         if let link = event.conferenceURL, let url = URL(string: link) {
-            Button("Join \(ConferenceDetector.serviceName(for: link)) Meeting") { NSWorkspace.shared.open(url) }
+            Button("Join \(ConferenceDetector.serviceName(for: link)) Meeting") { Meeting.join(url) }
             Divider()
         }
         // a read-only calendar (holidays, a shared calendar) refuses every write

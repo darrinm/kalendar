@@ -317,6 +317,7 @@ private struct AccountsSettings: View {
                         Button("Connect…") { Zoom.signIn() }
                     }
                 }
+                Toggle("Open Zoom meetings in browser", isOn: $prefs.zoomInBrowser)
             }
         }
         .formStyle(.grouped)

@@ -115,4 +115,30 @@ final class ZoomTests: XCTestCase {
         XCTAssertFalse(zoom.isConnected)
         XCTAssertNil(vault.tokens["zoom"])
     }
+
+    func testMeetingLinksOpenInTheWebClient() {
+        func web(_ link: String) -> String {
+            ConferenceDetector.joinURL(for: URL(string: link)!, inBrowser: true).absoluteString
+        }
+        XCTAssertEqual(web("https://us02web.zoom.us/j/123?pwd=abc"), "https://us02web.zoom.us/wc/123/join?pwd=abc")
+        XCTAssertEqual(web("https://zoom.us/j/123"), "https://zoom.us/wc/123/join")
+        XCTAssertEqual(web("https://zoom.us/j/123#success"), "https://zoom.us/wc/123/join#success")
+        // a trailing slash is dropped
+        XCTAssertEqual(web("https://zoom.us/j/123/?pwd=abc"), "https://zoom.us/wc/123/join?pwd=abc")
+        // ConferenceDetector matches case-insensitively
+        XCTAssertEqual(web("https://Zoom.US/J/123"), "https://Zoom.US/wc/123/join")
+        for unchanged in [
+            "https://zoom.us/my/someone",           // a personal room
+            "https://meet.google.com/abc-defg-hij", // another service
+            "https://example.com/j/123",            // /j/ on another host
+            "https://notzoom.us/j/123",             // a host that merely ends in zoom.us
+            "https://zoom.us/j/",                   // no meeting ID
+            "https://zoom.us/j/123/extra",          // more than a meeting ID
+        ] {
+            XCTAssertEqual(web(unchanged), unchanged, unchanged)
+        }
+        // with the setting off, every link opens as it is
+        let link = URL(string: "https://zoom.us/j/123")!
+        XCTAssertEqual(ConferenceDetector.joinURL(for: link, inBrowser: false), link)
+    }
 }

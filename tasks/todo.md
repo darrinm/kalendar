@@ -108,3 +108,20 @@ Decision (user): Zoom "whatever Google Calendar is doing" (a meeting per event i
 - [x] Setting Video conferencing › New events (None / Google Meet / Zoom). A new event's Zoom meeting is now created at Add Event, so abandoned or changed forms leave no meeting. Verified with default Zoom: the form opened on Zoom; an event added on "test" got meeting 896 8179 8485 in its location and notes and Kalendar's Join; the event was then deleted and "test" hidden again; the setting was removed afterwards.
 - [ ] The Zoom app is in development mode: only users in the Playful Software Zoom account can authorize it. Other users need it published (Production tab, Zoom review).
 - [ ] The privacy policy (massena.com/kalendar/privacy) covers Google only; Zoom sends event titles and times to Zoom and keeps a Zoom token in the Keychain.
+
+## Calendar window (branch `calendar-window`)
+Decisions (2026-10-14, from the user): Day, Week and Month views; view, edit, create, and drag to move and resize; opened from the ⚙ menu "Open Calendar Window ⌘O" and the status item's menu.
+
+- [x] `TimeGrid` (shared with Meet With): day columns with sub-columns, hours, all-day strip, now line, hover/drag-to-create highlight, block lanes. Blocks can open on click, move by dragging (15-minute steps, across days), and resize from the bottom edge.
+- [x] `EventPopover`: an NSPopover at the pointer that saves on close (`EventEditorModel.shouldClose`, §8.1 question included); new-event forms add on Add Event. Meet With uses it too.
+- [x] `CalendarWindowController` + model: day/week/month, ‹ › Today, ⌘1/⌘2/⌘3, events from the cache (declined and identical-event settings, calendar colors), refresh after each sync while open.
+- [x] Month view: weeks of day cells with up to N event rows and "+k more"; click an event to edit, a day number for that day, empty space to create; drag an event to another day.
+- [x] Moves and resizes write through `EventWriter.save`; a repeating event asks (§8.1), and "All" loads the series first. Read-only calendars and invitations don't move.
+- [x] SPEC: new section; §4.4 menu, §11 shortcuts. Tests for the pure parts (lanes, move/resize math).
+- [x] Verify in the app on the "test" calendar: create, open/edit, move, resize, month drag; then delete the test events.
+
+### Review
+- Built the shared `TimeGrid` and `EventPopover`; Meet With moved onto both.
+- Verified in the app on darrin@massena.com (Saturday Oct 17, no guests, deleted after): created "Kalendar window test" from a click (Zoom default switched to None first), moved it by dragging (2:00 → 3:00), resized its end (4:00 → 4:30), opened its detail form, dragged it in Month to Oct 24, deleted it from its context menu. Day, Week and Month render the real calendars.
+- Found and fixed while testing: a block's gestures sat at the grid's corner (attached after `.offset`); the create gesture took presses meant for blocks (now a layer under them); the window could keep a read-only copy of an identical event (now the writable copy, in the agenda too); other accounts' copies showed the old time after an edit (now updated).
+- Not done: Google's "send updates to guests?" choice; Kalendar always notifies guests of an organizer's edit (asked about by the user, 2026-10-14).

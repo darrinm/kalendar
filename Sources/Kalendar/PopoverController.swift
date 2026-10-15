@@ -175,14 +175,14 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         return true
     }
 
-    private static func hosting(_ content: AnyView, width: CGFloat) -> NSViewController {
+    static func hosting(_ content: AnyView, width: CGFloat) -> NSViewController {
         NSHostingController(rootView: TextScaled(content.frame(width: width)))
     }
 
     /// NSPopover draws its own frame, arrow included, in the system popover material. Putting a
     /// view in the theme background behind the content view recolors the whole shape, so the arrow
     /// matches the content instead of showing the material.
-    private static func paintFrame(of popover: NSPopover) {
+    static func paintFrame(of popover: NSPopover) {
         guard let frame = popover.contentViewController?.view.window?.contentView?.superview,
               !frame.subviews.contains(where: { $0 is PopoverBackgroundView }) else { return }
         let background = PopoverBackgroundView(frame: frame.bounds)
@@ -363,6 +363,8 @@ final class PopoverModel {
     @ObservationIgnored var close: () -> Void = {}
     /// Opens the Meet With window (§21).
     @ObservationIgnored var showMeetWith: () -> Void = {}
+    /// Opens the calendar window (§22).
+    @ObservationIgnored var showCalendar: () -> Void = {}
     /// Shows a popover beside the Mini Window; false when the open one refused to close.
     @ObservationIgnored var showChild: (NSView, AnyView, CGFloat, NSRectEdge, (() -> Bool)?) -> Bool = { _, _, _, _, _ in false }
     @ObservationIgnored var contentView: () -> NSView? = { nil }

@@ -261,13 +261,22 @@ final class AgendaModel {
     }
 
     private func section(for day: Date, events: [EventInstance]) -> DaySection {
-        // declined events only with "Show declined events" (§12); identical events on several
-        // calendars show once (§4.3) unless "Combine identical events" is off
-        var seen = Set<EventInstance.DuplicateKey>()
-        let shown = events.filter { e in
-            (prefs.showDeclined || !e.isDeclined) && (!prefs.combineIdentical || seen.insert(e.duplicateKey).inserted)
-        }
+        let shown = shown(events)
         return DaySection(day: day, allDay: shown.filter(\.allDay), timed: shown.filter { !$0.allDay })
+    }
+
+    /// The events the user sees: declined ones only with "Show declined events" (§12), and
+    /// identical events on several calendars once (§4.3) unless "Combine identical events" is off.
+    /// Of identical copies, one on a calendar the user can write is kept: another account's copy of
+    /// the same calendar may be read-only, and opening or dragging it could change nothing.
+    func shown(_ events: [EventInstance]) -> [EventInstance] {
+        let visible = events.filter { prefs.showDeclined || !$0.isDeclined }
+        guard prefs.combineIdentical else { return visible }
+        let writable = Set(visible.filter(isWritable).map(\.duplicateKey))
+        var seen = Set<EventInstance.DuplicateKey>()
+        return visible.filter { e in
+            (isWritable(e) || !writable.contains(e.duplicateKey)) && seen.insert(e.duplicateKey).inserted
+        }
     }
 
     /// Each event under every day it overlaps. A timed event ending at midnight stops the day before.

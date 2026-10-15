@@ -9,8 +9,15 @@ import SwiftUI
 final class MeetWithWindowController {
     private let model: MeetWithModel
     private var window: NSWindow?
+    private let popover = EventPopover()
 
-    init(model: MeetWithModel) { self.model = model }
+    init(model: MeetWithModel) {
+        self.model = model
+        model.showForm = { [weak self, weak model] form, closed in
+            self?.popover.show(EventEditor(model: form, onAdd: { model?.addEvent(form) }), in: self?.window, onClose: closed)
+        }
+        model.closeForm = { [weak self] in self?.popover.dismiss() }
+    }
 
     /// A sync changed the cache: the open window shows the user's new events; a closed one reads
     /// them when it opens.
@@ -54,7 +61,11 @@ final class MeetWithModel {
     private(set) var suggestions: [Contact] = []
     var selected = 0
     /// The new-event form open on a clicked slot.
-    var newEvent: EventEditorModel?
+    @ObservationIgnored private var newEvent: EventEditorModel?
+    /// Shows a new-event form beside the pointer; the closure runs when it closes. Set by the window
+    /// controller, with `closeForm`.
+    @ObservationIgnored var showForm: (EventEditorModel, @escaping () -> Void) -> Void = { _, _ in }
+    @ObservationIgnored var closeForm: () -> Void = {}
     @ObservationIgnored private var contacts: [Contact]?
 
     init(agenda: AgendaModel, accounts: AccountStore, writer: EventWriter) {
@@ -161,8 +172,8 @@ final class MeetWithModel {
     // MARK: New event
 
     /// Opens the new-event form for [start, end): the people invited, on the default calendar of the
-    /// account in the first person's domain.
-    func openSlot(_ start: Date, end: Date) {
+    /// account in the first person's domain. `done` runs when the form closes.
+    func openSlot(_ start: Date, end: Date, done: @escaping () -> Void) {
         let account = people.first.map { accounts.emails(preferringDomainOf: $0.email).first } ?? accounts.accounts.first?.email
         guard let calendar = agenda.defaultCalendar(account: account) else { return }
         var draft = EventDraft(parsed: NLParser().parse(""), account: calendar.account, calendarId: calendar.id)
@@ -174,17 +185,22 @@ final class MeetWithModel {
         draft.start = start
         draft.end = end
         draft.invite(people.map { ($0.email, $0.name) })
-        newEvent = EventEditorModel(newDraft: draft, agenda: agenda, writer: writer)
+        let form = EventEditorModel(newDraft: draft, agenda: agenda, writer: writer)
+        newEvent = form
+        showForm(form) { [weak self] in
+            if self?.newEvent === form { self?.newEvent = nil }
+            done()
+        }
     }
 
-    func addEvent() {
-        guard let form = newEvent, form.canAdd else { return }
+    func addEvent(_ form: EventEditorModel) {
+        guard form.canAdd else { return }
         // a form closed or replaced while its Zoom meeting was created adds nothing
         form.commit { [weak self] draft in
             guard let self, newEvent === form else { return }
             writer.insert(draft)
             if Preferences.shared.playSounds { NSSound(named: "Pop")?.play() }
-            newEvent = nil
+            closeForm()
             cacheChanged()
         }
     }
@@ -218,7 +234,7 @@ struct MeetWithView: View {
             }
             .buttonStyle(.borderless)
             .padding(16)
-            WeekGrid(model: model)
+            PeopleGrid(model: model)
         }
         .background(Theme.background)
         .tint(Theme.accent)
@@ -329,265 +345,26 @@ private struct Legend: View {
     }
 }
 
-/// Hours down the side, the week's days across, each day split into a column per person (the user
-/// first). The slot under the pointer is highlighted; a click opens the new-event form there, and a
-/// drag opens it for the slots dragged across.
-private struct WeekGrid: View {
-    @Bindable var model: MeetWithModel
-    @State private var highlight = SlotHighlight()
-    @State private var clicked: CGRect = .zero
-
-    private let hourHeight: CGFloat = 48
-    private let gutter: CGFloat = 56
-    private let slot: TimeInterval = 30 * 60
+/// The week grid: the user's events, then each person's whose calendar Kalendar can read; a person
+/// whose calendar it can't gets no column, and the legend says so.
+private struct PeopleGrid: View {
+    let model: MeetWithModel
 
     var body: some View {
-        GeometryReader { geo in
-            let dayWidth = max((geo.size.width - gutter - 8) / 7, 40)
-            VStack(spacing: 0) {
-                header(dayWidth: dayWidth)
-                Theme.line.frame(height: 1)
-                ScrollViewReader { proxy in
-                    ScrollView(.vertical) {
-                        grid(dayWidth: dayWidth)
-                        // the now line alone redraws each minute, not the whole grid
-                        .overlay(alignment: .topLeading) {
-                            TimelineView(.everyMinute) { context in nowLine(dayWidth: dayWidth, now: context.date) }
-                                .allowsHitTesting(false)
-                        }
-                        // one marker per hour, laid out (not offset) so scrollTo can find them
-                        .background(alignment: .top) {
-                            VStack(spacing: 0) {
-                                ForEach(0..<24, id: \.self) { Color.clear.frame(height: hourHeight).id($0) }
-                            }
-                        }
-                    }
-                    .frame(maxHeight: .infinity)
-                    // opens at 8 AM; the next turn of the run loop, once the content is laid out
-                    .onAppear { DispatchQueue.main.async { proxy.scrollTo(8, anchor: .top) } }
-                }
-            }
-        }
-    }
-
-    private func header(dayWidth: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: gutter, height: 0)
-            ForEach(model.days, id: \.self) { day in
-                let today = Calendar.current.isDateInToday(day)
-                VStack(spacing: 2) {
-                    Text(day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
-                        .uiFont(11, weight: .semibold)
-                        .foregroundStyle(today ? Theme.accent : Theme.muted)
-                    Text(day.formatted(.dateTime.day()))
-                        .uiFont(18, weight: today ? .bold : .regular)
-                        .foregroundStyle(today ? Theme.accent : Theme.text)
-                }
-                .frame(width: dayWidth)
-            }
-        }
-        .padding(.bottom, 6)
-    }
-
-    private func grid(dayWidth: CGFloat) -> some View {
-        // a person whose calendar Kalendar can't read gets no column; the legend says so
         let shown = model.people.indices.map { ($0, model.schedules[model.people[$0].email.lowercased()]) }
             .filter { $0.1 != .unavailable }
-        let columns = [model.mine] + shown.map { $0.1?.blocks ?? [] }
-        let colors = [color(0)] + shown.map { color($0.0 + 1) }
-        let busyOnly = [false] + shown.map { if case .busy = $0.1 { true } else { false } }
-        let columnWidth = dayWidth / CGFloat(columns.count)
-        return ZStack(alignment: .topLeading) {
-            ForEach(0..<24, id: \.self) { hour in
-                HStack(alignment: .top, spacing: 4) {
-                    Text(hourLabel(hour)).uiFont(11).foregroundStyle(Theme.muted)
-                        .frame(width: gutter - 8, alignment: .trailing)
-                        .offset(y: -7)
-                    Theme.line.frame(height: 1)
-                }
-                .frame(height: hourHeight, alignment: .top)
-                .offset(y: CGFloat(hour) * hourHeight)
-            }
-            ForEach(Array(model.days.enumerated()), id: \.element) { dayIndex, day in
-                let x = gutter + CGFloat(dayIndex) * dayWidth
-                Theme.line.frame(width: 1, height: 24 * hourHeight).offset(x: x)
-                ForEach(Array(columns.enumerated()), id: \.offset) { column, blocks in
-                    let laid = Availability.lanes(blocks.compactMap { clip($0, to: day) })
-                    ForEach(Array(laid.enumerated()), id: \.offset) { _, item in
-                        let width = columnWidth / CGFloat(item.lanes)
-                        // inset 1 pt on every side, so events side by side or back to back keep a gap
-                        BlockView(block: item.block, color: colors[column], busyOnly: busyOnly[column])
-                            .frame(width: max(width - 2, 2), height: max(y(item.block.end, in: day) - y(item.block.start, in: day) - 2, 12))
-                            .offset(x: x + CGFloat(column) * columnWidth + CGFloat(item.lane) * width + 1,
-                                    y: y(item.block.start, in: day) + 1)
-                    }
-                }
-            }
-            // last, so the span being chosen shows over the events it overlaps
-            SlotHighlightView(highlight: highlight) { rect(for: $0, dayWidth: dayWidth).insetBy(dx: 1, dy: 0) }
-        }
-        .frame(width: gutter + 7 * dayWidth, height: 24 * hourHeight, alignment: .topLeading)
-        .contentShape(Rectangle())
-        .onContinuousHover { phase in
-            // with the button down, a drag owns the highlight
-            guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
-            // only a new slot redraws, and only the highlight view reads `highlight`
-            var span: Span?
-            if case .active(let point) = phase { span = slot(at: point, dayWidth: dayWidth).map(defaultSpan) }
-            if span != highlight.span { highlight.span = span }
-        }
-        // a click opens the form for the default duration; a drag, for the slots dragged across
-        .gesture(DragGesture(minimumDistance: 0)
-            .onChanged { drag in
-                guard let span = span(of: drag, dayWidth: dayWidth) else { return }
-                if span != highlight.span { highlight.span = span }
-            }
-            .onEnded { drag in
-                guard let span = span(of: drag, dayWidth: dayWidth) else { return }
-                highlight.span = span
-                clicked = rect(for: span, dayWidth: dayWidth)
-                model.openSlot(span.start, end: span.end)
-            })
-        .popover(isPresented: Binding(get: { model.newEvent != nil }, set: { shown in
-                    // closing the form clears its span; the pointer's next move shows the slot under it
-                    if !shown { model.newEvent = nil; highlight.span = nil }
-                 }),
-                 attachmentAnchor: .rect(.rect(clicked)), arrowEdge: .trailing) {
-            if let form = model.newEvent {
-                EventEditor(model: form, onAdd: model.addEvent).frame(width: 320)
+        let mine = model.mine.enumerated().map { GridBlock(id: "me\($0.offset)", start: $0.element.start, end: $0.element.end,
+                                                           title: $0.element.title, color: color(0)) }
+        let theirs = shown.map { index, schedule in
+            let busyOnly = if case .busy = schedule { true } else { false }
+            return (schedule?.blocks ?? []).enumerated().map {
+                GridBlock(id: "\(index)-\($0.offset)", start: $0.element.start, end: $0.element.end, title: $0.element.title,
+                          color: color(index + 1), outlined: busyOnly)
             }
         }
-    }
-
-    @ViewBuilder
-    private func nowLine(dayWidth: CGFloat, now: Date) -> some View {
-        if let dayIndex = model.days.firstIndex(where: { Calendar.current.isDate(now, inSameDayAs: $0) }) {
-            Theme.bad.frame(width: dayWidth, height: 2)
-                .offset(x: gutter + CGFloat(dayIndex) * dayWidth, y: y(now, in: model.days[dayIndex]))
-        }
-    }
-
-    /// The meeting a press or drag describes: from the slot pressed to the one under the pointer, in
-    /// that day's column, either direction; the default duration while the pointer is in the slot
-    /// pressed, so a click that jitters, or a drag brought back, isn't a 30-minute meeting.
-    private func span(of drag: DragGesture.Value, dayWidth: CGFloat) -> Span? {
-        guard let from = slot(at: drag.startLocation, dayWidth: dayWidth) else { return nil }
-        // the pointer may leave the grid; it is held to the day's first and last slots
-        let y = min(max(drag.location.y, 0), 24 * hourHeight - 1)
-        guard let to = slot(at: CGPoint(x: drag.startLocation.x, y: y), dayWidth: dayWidth) else { return nil }
-        guard to != from else { return defaultSpan(from) }
-        let (first, last) = from.start <= to.start ? (from, to) : (to, from)
-        return Span(day: from.day, start: first.start, end: last.start.addingTimeInterval(slot))
-    }
-
-    private func defaultSpan(_ slot: Slot) -> Span {
-        Span(day: slot.day, start: slot.start,
-             end: slot.start.addingTimeInterval(TimeInterval(Preferences.shared.defaultDuration * 60)))
-    }
-
-    private func rect(for span: Span, dayWidth: CGFloat) -> CGRect {
-        let day = model.days[span.day]
-        let top = y(span.start, in: day)
-        return CGRect(x: gutter + CGFloat(span.day) * dayWidth, y: top, width: dayWidth, height: y(span.end, in: day) - top)
-    }
-
-    /// The 30-minute slot at `point`, by day column.
-    private func slot(at point: CGPoint, dayWidth: CGFloat) -> Slot? {
-        let day = Int((point.x - gutter) / dayWidth)
-        guard point.x >= gutter, model.days.indices.contains(day) else { return nil }
-        let seconds = Double(point.y / hourHeight) * 3600
-        let snapped = (seconds / slot).rounded(.down) * slot
-        guard snapped >= 0, snapped < 86400 else { return nil }
-        // the clock time under the pointer, which on a daylight-saving day isn't midnight plus `snapped`
-        let minutes = Int(snapped) / 60
-        return Slot(day: day, start: Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0,
-                                                           of: model.days[day]) ?? model.days[day])
-    }
-
-    /// The part of `block` inside `day`; nil when it doesn't touch the day.
-    private func clip(_ block: Availability.Block, to day: Date) -> Availability.Block? {
-        guard let next = Calendar.current.date(byAdding: .day, value: 1, to: day),
-              block.end > day, block.start < next else { return nil }
-        return Availability.Block(start: max(block.start, day), end: min(block.end, next), title: block.title)
-    }
-
-    /// Where `date`'s clock time falls in `day`'s 24 hour rows; the next midnight is the bottom. By
-    /// clock time, so events after a daylight-saving change still line up with the hour labels.
-    private func y(_ date: Date, in day: Date) -> CGFloat {
-        let calendar = Calendar.current
-        guard let next = calendar.date(byAdding: .day, value: 1, to: day), date < next else { return 24 * hourHeight }
-        let c = calendar.dateComponents([.hour, .minute, .second], from: date)
-        return (CGFloat(c.hour ?? 0) + CGFloat(c.minute ?? 0) / 60 + CGFloat(c.second ?? 0) / 3600) * hourHeight
-    }
-
-    private func hourLabel(_ hour: Int) -> String {
-        guard hour > 0, let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) else { return "" }
-        return date.formatted(.dateTime.hour())
-    }
-}
-
-/// A 30-minute slot in the week: the day's column and the start.
-private struct Slot: Equatable {
-    var day: Int
-    var start: Date
-}
-
-/// A meeting's place in the week: the day's column, the start and the end.
-private struct Span: Equatable {
-    var day: Int
-    var start: Date
-    var end: Date
-}
-
-/// The span under the pointer (the default duration) or being dragged. Its own object, read only by
-/// `SlotHighlightView`, so moving the pointer redraws the highlight and not the grid.
-@Observable
-private final class SlotHighlight {
-    var span: Span?
-}
-
-private struct SlotHighlightView: View {
-    let highlight: SlotHighlight
-    let frame: (Span) -> CGRect
-
-    var body: some View {
-        if let span = highlight.span {
-            let rect = frame(span)
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Theme.accent.opacity(0.15))
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.accent, lineWidth: 1))
-                .frame(width: rect.width, height: rect.height)
-                .offset(x: rect.minX, y: rect.minY)
-                .allowsHitTesting(false)
+        TimeGrid(days: model.days, columns: [mine] + theirs) { start, end, done in
+            model.openSlot(start, end: end, done: done)
         }
     }
 }
 
-/// One busy stretch: the title and start time when the calendar is shared, "Busy" otherwise.
-private struct BlockView: View {
-    let block: Availability.Block
-    let color: Color
-    let busyOnly: Bool
-
-    private var times: String {
-        "\(block.start.formatted(date: .omitted, time: .shortened)) – \(block.end.formatted(date: .omitted, time: .shortened))"
-    }
-
-    var body: some View {
-        GeometryReader { geo in
-            VStack(alignment: .leading, spacing: 0) {
-                Text(block.title ?? "Busy").uiFont(11, weight: .semibold).lineLimit(geo.size.height > 30 ? 2 : 1)
-                // a narrow block has room only for the title
-                if geo.size.width >= 70 && geo.size.height > 30 { Text(times).uiFont(10).lineLimit(1) }
-            }
-        }
-        .foregroundStyle(busyOnly ? Theme.text : .white)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(busyOnly ? color.opacity(0.3) : color.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(color, lineWidth: busyOnly ? 1 : 0))
-        .clipped()
-        .help("\(block.title ?? "Busy"), \(times)")
-    }
-}

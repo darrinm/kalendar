@@ -143,20 +143,34 @@ final class EventWriterTests: XCTestCase {
         XCTAssertNil(try cache.event(account: "work@example.com", calendarId: "primary", id: "e1"))
     }
 
-    /// An edit in place replaces only the editing account's copy: the other account's copy stays
-    /// (stale until its sync) rather than vanishing from a list that shows only that account's.
-    func testEditKeepsOtherAccountsCopy() async throws {
+    /// An edit in place reaches every account's copy of the event, so the other account's doesn't
+    /// show the old version (or vanish) until its sync; it keeps its own response and alerts.
+    func testEditUpdatesOtherAccountsCopy() async throws {
+        try cache.replaceCalendars([
+            CalendarInfo(account: "work@example.com", id: "work", summary: "Work", backgroundColor: "#000000",
+                         accessRole: "owner", selected: true, primary: true),
+            CalendarInfo(account: "work@example.com", id: "primary", summary: "Me", backgroundColor: "#000000",
+                         accessRole: "reader", selected: true, primary: false),
+        ], account: "work@example.com")
         let e = event()
         var shared = e
         shared.account = "work@example.com"
+        shared.selfResponse = "tentative"
+        shared.reminders = Reminders(useDefault: false, minutes: [30])
         try cache.upsert([e, shared])
         google.handler = { _, _ in (200, self.serverEvent("e1", title: "Standup (moved)")) }
         let original = EventDraft(e, recurrence: nil)
         var draft = original
         draft.summary = "Standup (moved)"
+        draft.start = start.addingTimeInterval(3600)
+        draft.end = draft.start.addingTimeInterval(1800)
         writer.save(e, original: original, draft: draft, scope: .occurrence, series: nil)
         XCTAssertEqual(try cached()?.summary, "Standup (moved)")
-        XCTAssertNotNil(try cache.event(account: "work@example.com", calendarId: "primary", id: "e1"))
+        let copy = try XCTUnwrap(cache.event(account: "work@example.com", calendarId: "primary", id: "e1"))
+        XCTAssertEqual(copy.summary, "Standup (moved)")
+        XCTAssertEqual(copy.start, draft.start)
+        XCTAssertEqual(copy.selfResponse, "tentative")
+        XCTAssertEqual(copy.reminders.minutes, [30])
     }
 
     /// If Google won't un-cancel the event, undo inserts a copy without its guests (§8.2).

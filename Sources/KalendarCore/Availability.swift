@@ -88,25 +88,27 @@ public enum Availability {
         }
     }
 
-    /// Side-by-side columns for overlapping blocks in one person's column: each block's column and
-    /// the number of columns in its overlapping group. Blocks that touch end to start don't overlap.
-    public static func lanes(_ blocks: [Block]) -> [(block: Block, lane: Int, lanes: Int)] {
-        let sorted = blocks.sorted { ($0.start, $1.end) < ($1.start, $0.end) }
-        var result: [(block: Block, lane: Int, lanes: Int)] = []
-        var group: [(block: Block, lane: Int)] = []
+    /// Side-by-side columns for overlapping items in one column of a time grid (Meet With, the
+    /// calendar window): each item's column and the number of columns in its overlapping group.
+    /// Items that touch end to start don't overlap.
+    public static func lanes<Item>(_ items: [Item], start: (Item) -> Date, end: (Item) -> Date)
+        -> [(item: Item, lane: Int, lanes: Int)] {
+        let sorted = items.sorted { (start($0), end($1)) < (start($1), end($0)) }
+        var result: [(item: Item, lane: Int, lanes: Int)] = []
+        var group: [(item: Item, lane: Int)] = []
         var groupEnd = Date.distantPast
         func close() {
             let count = (group.map(\.lane).max() ?? -1) + 1
-            result += group.map { ($0.block, $0.lane, count) }
+            result += group.map { ($0.item, $0.lane, count) }
             group = []
         }
-        for b in sorted {
-            if b.start >= groupEnd { close() }
-            // the first column whose last block has ended
+        for item in sorted {
+            if start(item) >= groupEnd { close() }
+            // the first column whose last item has ended
             var lane = 0
-            while group.contains(where: { $0.lane == lane && $0.block.end > b.start }) { lane += 1 }
-            group.append((b, lane))
-            groupEnd = max(groupEnd, b.end)
+            while group.contains(where: { $0.lane == lane && end($0.item) > start(item) }) { lane += 1 }
+            group.append((item, lane))
+            groupEnd = max(groupEnd, end(item))
         }
         close()
         return result

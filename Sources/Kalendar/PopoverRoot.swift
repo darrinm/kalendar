@@ -267,6 +267,8 @@ private struct Toolbar: View {
                     .keyboardShortcut(.delete, modifiers: .command)
                     .disabled(!model.hasSelection)
                 Divider()
+                Button("Open Calendar Window") { model.showCalendar() }
+                    .keyboardShortcut("o", modifiers: .command)
                 Button("Meet With…") { model.showMeetWith() }
                     .keyboardShortcut("m", modifiers: [.command, .shift])
                 Divider()

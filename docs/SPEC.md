@@ -49,7 +49,7 @@ The behavior below was specified on 2026‑09‑21 from observation of an existi
 - Template‑style calendar glyph showing today's day number ("21"). Redraw at midnight and on `NSCalendarDayChanged`.
 - **Left‑click**: toggle popover.
 - **⌥‑click** [out of scope]: the reference app opens the full window; here, no‑op or open Settings.
-- Right‑click: small menu — Meet With… (§21), Settings…, Check for Updates…, About, Quit. **[decision]**
+- Right‑click: small menu — Open Calendar Window (§22), Meet With… (§21), Settings…, Check for Updates…, About, Quit. **[decision]**
 - **Join item [decision]:** while an event would get the Join pill (§4.3: timed, video link, not declined, in progress or starting within 15 minutes), a second status item to the right of the glyph shows a video glyph and "Join <name>". The name is the event title without the user's own name: "Darrin / Kate" shows "Join Kate" for Darrin. The title is split on "/", "<>", "&", "|" and " x ", and the parts that start with the user's first name (from the account email or the user's attendee name) are dropped. With no part left, it is the whole title. Names longer than 20 characters are cut with "…". Clicking it opens the link and hides the item. It does not return for that event; it returns for the next event that qualifies. It updates each minute and after each sync.
 - Must coexist with menu bar managers (Bartender/Ice): use a standard `NSStatusItem`; anchor the popover to `statusItem.button`.
 
@@ -146,7 +146,7 @@ Behaviors:
   ─────
   Quit Completely
   ```
-  **[decision]** v1 menu: Go to Today ⌘T · Go to Date… ⇧⌘T · Delete Item ⌘⌫ · — · Meet With… ⇧⌘M (§21) · — · Refresh All ⇧⌘R · Settings… ⌘, · Check for Updates… (§20) · Launch at Login (checkable) · — · Quit ⌘Q. Detach / Keep in Front return in v2.
+  **[decision]** v1 menu: Go to Today ⌘T · Go to Date… ⇧⌘T · Delete Item ⌘⌫ · — · Open Calendar Window ⌘O (§22) · Meet With… ⇧⌘M (§21) · — · Refresh All ⇧⌘R · Settings… ⌘, · Check for Updates… (§20) · Launch at Login (checkable) · — · Quit ⌘Q. Detach / Keep in Front return in v2.
 
 ---
 
@@ -418,6 +418,7 @@ Tasks are Google Tasks. Completing writes `status: "completed"`; uncompleting wr
 | ⇧⌘T | Go to Date… |
 | ⇧⌘R | Refresh All (run an incremental sync for every calendar and task list now) |
 | ⇧⌘M | Meet With… (§21) |
+| ⌘O | Open Calendar Window (§22); in it: ←/→ previous/next, ⌘T today, ⌘1/⌘2/⌘3 Day/Week/Month |
 | ⌘Q | Quit |
 | ⌃⌘A | Keep popover in front (v2) |
 
@@ -628,3 +629,21 @@ Google Calendar's "Meet with…": pick people, see their calendars over the user
   3. Otherwise no column; the legend says "calendar not shared".
 - **Blocks** are inset 1 pt on every side, so events side by side or back to back keep a 2 pt gap. They show the title (two lines when tall enough) and the time range when 70 pt wide or more; the tooltip has both.
 - **Making the meeting:** the 30‑minute slot under the pointer is highlighted at the default duration's height. A click opens the new‑event form (§5.1, `EventEditor`) in a popover beside the slot for the default duration. A drag sets the length instead: the highlight runs from the slot pressed to the slot under the pointer, in 30‑minute steps and in either direction, held to that day's column and to midnight at either end, and releasing opens the form for that span. The highlight draws over the events it crosses. The form has that start and end, busy, the calendar's default alerts, on the Default calendar or the primary calendar of the account in the first person's domain, with the user as organizer and everyone chosen invited. Add Event inserts it (§5.4); the user's column updates at once.
+
+---
+
+## 22. Calendar window **[decision]**
+
+The reference app's full calendar window (§4.4 "Open Full Calendar Window ⌘O"), for the selected calendars.
+
+- **Opening:** ⚙ menu **Open Calendar Window ⌘O**, and the status item's right‑click menu. A resizable window titled "Kalendar" (1100×760 pt at first; the frame is remembered); it refreshes after each sync while open.
+- **Toolbar:** ‹ › (also ← →) step by the view's unit, **Today** (⌘T), the title (the day, the week's range, or the month), and a **Day | Week | Month** control (⌘1 ⌘2 ⌘3). The window opens on Week.
+- **Events:** as the agenda shows them (§4.3, §12): declined ones only with "Show declined events", identical ones once unless "Combine identical events" is off. Of identical copies (two accounts caching one calendar), the one on a calendar the user can write is shown. Each in its color (§14); not yet accepted or declined, outlined.
+- **Day and Week:** the hour grid Meet With uses (§21, `TimeGrid`): one column per day, an all‑day strip above the hours, the now line, opening at the day's start hour (§12). Overlapping events sit side by side.
+  - A click on an event opens its detail form (§6, `EventEditor`) beside the pointer; it saves when it closes, asking about a repeating event first (§8.1). Invitations open for RSVP.
+  - A click or drag on empty time opens the new‑event form for that span, as in Meet With (default calendar, default duration for a click, the default video §5.1); Add Event adds it.
+  - Dragging an event moves it: whole days across, 15‑minute steps up and down. Dragging its bottom 6 pt changes its end (at least 15 minutes). The event is dimmed and a copy shows where it would land. Read‑only calendars and invitations don't move.
+  - An event's context menu has **Delete** (§8.2).
+- **Month:** the weeks holding the month, a cell per day: the date (today in an accent circle; days outside the month dimmed), then the day's events, all‑day first as colored bars, timed ones as a dot, start time and title; more than fit show as "+N more". A click on the date or "+N more" opens that day in Day; on an event, its detail form; on empty space, a new event at the day's start hour. Events drag to another day (same time of day); the context menu has Delete.
+- **Writes:** moves and resizes go through `EventWriter.save`. A repeating event asks (§8.1); "All" loads the series first and moves it by the same amount. Guests hear about it as for any edit (§5.4). An edit also updates the other accounts' cached copies of the event (shared fields only: each keeps its own response, alerts and color), so they don't show the old version until their next sync.
+

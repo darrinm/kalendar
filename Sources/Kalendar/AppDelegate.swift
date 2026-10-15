@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var popover: PopoverController!
     private var alerts: AlertScheduler!
     private var meetWith: MeetWithWindowController!
+    private var calendarWindow: CalendarWindowController!
     private var meetWithModel: MeetWithModel!
     private lazy var settings = SettingsWindowController(accounts: accounts, cache: cache, engine: engine, alerts: alerts,
                                                          signIn: signIn)
@@ -33,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.alerts.setNeedsReschedule()
             self?.statusItem?.redraw()
             self?.meetWith?.cacheChanged()
+            self?.calendarWindow?.cacheChanged()
         }
         let model = PopoverModel(accounts: accounts, agenda: agenda, writer: writer, signIn: signIn,
                                  showSettings: { [weak self] in self?.showSettings() },
@@ -44,6 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetWithModel = MeetWithModel(agenda: agenda, accounts: accounts, writer: writer)
         meetWith = MeetWithWindowController(model: meetWithModel)
         model.showMeetWith = { [weak self] in self?.showMeetWith() }
+        calendarWindow = CalendarWindowController(model: CalendarWindowModel(agenda: agenda, accounts: accounts, writer: writer))
+        model.showCalendar = { [weak self] in self?.showCalendar() }
         alerts.openEvent = { [weak self] event in
             guard let self else { return }
             if !popover.isShown { togglePopover() }
@@ -111,6 +115,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `open Kalendar.app --args -openPopoverAtLaunch YES` opens the popover for UI testing.
         // Delayed because the status item has no on-screen position yet at launch, and NSPopover
         // silently refuses to show against it.
+        // `--args -openCalendarAtLaunch YES` opens the calendar window, for UI testing
+        if UserDefaults.standard.bool(forKey: "openCalendarAtLaunch") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.showCalendar() }
+        }
         // `--args -meetWithAtLaunch a@x.com,b@y.com` opens Meet With with those people, for UI testing
         if let emails = UserDefaults.standard.string(forKey: "meetWithAtLaunch") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
@@ -210,6 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
+        menu.addItem(withTitle: "Open Calendar Window", action: #selector(showCalendar), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Meet With…", action: #selector(showMeetWith), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
@@ -217,6 +226,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Kalendar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
+    }
+
+    @objc func showCalendar() {
+        popover.close()
+        calendarWindow.show()
     }
 
     @objc func showMeetWith() {

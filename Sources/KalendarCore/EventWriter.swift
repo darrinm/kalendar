@@ -94,11 +94,29 @@ public final class EventWriter {
             updated.calendarId = draft.calendarId
         }
         // a move takes the event off the calendar for every account that caches it; an edit in place
-        // replaces only this account's copy, and the others refresh at their next sync
+        // replaces this account's copy, and the other accounts' copies take the shared fields
         try? cache.deleteEvent(account: moved ? nil : event.account, calendarId: event.calendarId, id: event.id)
-        try? cache.upsert([updated])
+        try? cache.upsert([updated] + (moved ? [] : otherCopies(of: event, editedTo: updated)))
         engine.onChange()
         Task { await flush() }
+    }
+
+    /// The other accounts' cached copies of `event` with an edit's shared fields, so they don't show
+    /// the old version until their next sync. Each keeps its own response, alerts and color.
+    private func otherCopies(of event: EventInstance, editedTo updated: EventInstance) -> [EventInstance] {
+        let accounts = ((try? cache.calendars()) ?? []).filter { $0.id == event.calendarId && $0.account != event.account }
+        return accounts.compactMap { calendar in
+            guard var copy = try? cache.event(account: calendar.account, calendarId: event.calendarId, id: event.id)
+            else { return nil }
+            copy.summary = updated.summary
+            copy.location = updated.location
+            copy.notes = updated.notes
+            copy.start = updated.start
+            copy.end = updated.end
+            copy.allDay = updated.allDay
+            copy.timeZone = updated.timeZone
+            return copy
+        }
     }
 
     /// Same account: `events.move`. Another account: insert a copy there, then delete the original

@@ -71,7 +71,7 @@ final class AvailabilityTests: XCTestCase {
         let b = Availability.Block(start: at(9, 30), end: at(11), title: "b")
         let c = Availability.Block(start: at(10), end: at(10, 30), title: "c")
         let d = Availability.Block(start: at(11), end: at(12), title: "d")
-        let laid = Availability.lanes([d, c, b, a]).map { "\($0.block.title!)\($0.lane)/\($0.lanes)" }
+        let laid = Availability.lanes([d, c, b, a], start: \.start, end: \.end).map { "\($0.item.title!)\($0.lane)/\($0.lanes)" }
         // c reuses a's column once a ends; d starts after the group, alone
         XCTAssertEqual(laid, ["a0/2", "b1/2", "c0/2", "d0/1"])
     }

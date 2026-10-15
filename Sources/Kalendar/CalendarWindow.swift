@@ -133,8 +133,8 @@ final class CalendarWindowModel {
     /// A month day's number: that day, in the Day view.
     func showDay(_ day: Date) {
         anchor = calendar.startOfDay(for: day)
-        mode = .day
-        reload()
+        // a change of mode reloads
+        if mode == .day { reload() } else { mode = .day }
     }
 
     func reload() {
@@ -149,7 +149,7 @@ final class CalendarWindowModel {
     }
 
     /// An invitation's time is the organizer's to change; a read-only calendar takes no writes.
-    private func canMove(_ e: EventInstance) -> Bool { agenda.isWritable(e) && !e.isInvitation }
+    func canMove(_ e: EventInstance) -> Bool { agenda.isWritable(e) && !e.isInvitation }
 
     func event(_ id: String) -> EventInstance? { events.first { $0.key == id } }
 
@@ -164,14 +164,7 @@ final class CalendarWindowModel {
     /// A new event's form for [start, end) on the default calendar (§12). `done` runs when it closes.
     func create(_ start: Date, _ end: Date, done: @escaping () -> Void = {}) {
         guard let calendar = agenda.defaultCalendar(account: accounts.accounts.first?.email) else { return }
-        var draft = EventDraft(parsed: NLParser().parse(""), account: calendar.account, calendarId: calendar.id)
-        draft.summary = ""
-        // the empty parse is all-day; a timed event is busy, with the calendar's default alerts
-        draft.allDay = false
-        draft.busy = true
-        draft.reminders = Reminders()
-        draft.start = start
-        draft.end = end
+        let draft = EventDraft.timed(on: calendar, start: start, end: end)
         let form = EventEditorModel(newDraft: draft, agenda: agenda, writer: writer)
         newEvent = form
         showForm(form, { [weak self] in self?.add(form) }) { [weak self] in
@@ -194,7 +187,6 @@ final class CalendarWindowModel {
             writer.insert(draft)
             if Preferences.shared.playSounds { NSSound(named: "Pop")?.play() }
             closeForm()
-            reload()
         }
     }
 
@@ -210,11 +202,9 @@ final class CalendarWindowModel {
         draft.end = end
         if scope == .occurrence {
             writer.save(event, original: original, draft: draft, scope: scope, series: nil)
-            reload()
         } else {
             Task {
                 writer.save(event, original: original, draft: draft, scope: scope, series: await writer.series(of: event))
-                reload()
             }
         }
     }
@@ -232,7 +222,6 @@ final class CalendarWindowModel {
     func delete(_ id: String) {
         guard let event = event(id), canMove(event), let scope = Dialogs.scope(for: event) else { return }
         writer.delete(event, scope: scope)
-        reload()
     }
 }
 
@@ -271,6 +260,8 @@ struct CalendarView: View {
                         .hidden()
                 }
             }
+            // a move, resize or delete that failed (§18.3)
+            WriteErrorNotice(writer: model.writer)
             switch model.mode {
             case .day, .week:
                 let timed = model.events.filter { !$0.allDay }.map(model.block)
@@ -363,7 +354,7 @@ private struct MonthDayCell: View {
                     .onTapGesture { model.open(e.key) }
                     .draggable(e.key)
                     .contextMenu {
-                        if model.block(e).movable { Button("Delete") { model.delete(e.key) } }
+                        if model.canMove(e) { Button("Delete") { model.delete(e.key) } }
                     }
             }
             if shown.count < events.count {
@@ -377,8 +368,9 @@ private struct MonthDayCell: View {
         .contentShape(Rectangle())
         .onTapGesture { model.create(on: day) }
         .dropDestination(for: String.self) { ids, _ in
-            for id in ids { model.move(id, to: day) }
-            return !ids.isEmpty
+            let movable = ids.filter { model.event($0).map(model.canMove) == true }
+            for id in movable { model.move(id, to: day) }
+            return !movable.isEmpty
         }
     }
 }

@@ -216,7 +216,7 @@ private struct SyncNotice: View {
 }
 
 /// The last write that failed (§18.3), until dismissed.
-private struct WriteErrorNotice: View {
+struct WriteErrorNotice: View {
     let writer: EventWriter
 
     var body: some View {

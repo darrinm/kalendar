@@ -148,8 +148,8 @@ struct TimeGrid: View {
                 Theme.line.frame(width: 1, height: 24 * hourHeight).offset(x: x).allowsHitTesting(false)
                 ForEach(Array(columns.enumerated()), id: \.offset) { column, blocks in
                     let laid = Availability.lanes(blocks.compactMap { clip($0, to: day) }, start: \.start, end: \.end)
-                    ForEach(laid.indices, id: \.self) { i in
-                        let placed = laid[i]
+                    // by the block's id, so a reload during a drag can't hand the drag's view another block
+                    ForEach(laid, id: \.item.block.id) { placed in
                         let width = columnWidth / CGFloat(placed.lanes)
                         let frame = CGRect(x: x + CGFloat(column) * columnWidth + CGFloat(placed.lane) * width,
                                            y: y(placed.item.start, in: day), width: width,
@@ -192,7 +192,8 @@ struct TimeGrid: View {
                     guard let span = span(of: drag, dayWidth: dayWidth) else { return }
                     highlight.span = span
                     let highlight = highlight
-                    onCreate(span.start, span.end) { highlight.span = nil }
+                    // a form replaced by the next one closes after that one set its span
+                    onCreate(span.start, span.end) { if highlight.span == span { highlight.span = nil } }
                 })
     }
 
@@ -221,9 +222,10 @@ struct TimeGrid: View {
                             }
                             .onEnded { _ in
                                 defer { moving.move = nil }
-                                guard block.movable, let move = moving.move, move.start != block.start || move.end != block.end
+                                guard let move = moving.move, move.block.movable,
+                                      move.start != move.block.start || move.end != move.block.end
                                 else { return }
-                                onMove?(block, move.start, move.end)
+                                onMove?(move.block, move.start, move.end)
                             }
                             .exclusively(before: TapGesture().onEnded { onOpen?(block) }))
                     .contextMenu { deleteMenu(block) }
@@ -240,8 +242,10 @@ struct TimeGrid: View {
         if resize {
             return .init(block: block, start: block.start, end: max(block.end.addingTimeInterval(minutes), block.start.addingTimeInterval(step)))
         }
-        let days = Int((translation.width / dayWidth).rounded())
         let calendar = Calendar.current
+        // held to the days shown; a block that started before them moves only in time
+        let first = days.firstIndex(of: calendar.startOfDay(for: block.start))
+        let days = first.map { min(max(Int((translation.width / dayWidth).rounded()), -$0), self.days.count - 1 - $0) } ?? 0
         let start = calendar.date(byAdding: .day, value: days, to: block.start)?.addingTimeInterval(minutes) ?? block.start
         return .init(block: block, start: start, end: start.addingTimeInterval(block.end.timeIntervalSince(block.start)))
     }

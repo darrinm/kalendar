@@ -176,14 +176,7 @@ final class MeetWithModel {
     func openSlot(_ start: Date, end: Date, done: @escaping () -> Void) {
         let account = people.first.map { accounts.emails(preferringDomainOf: $0.email).first } ?? accounts.accounts.first?.email
         guard let calendar = agenda.defaultCalendar(account: account) else { return }
-        var draft = EventDraft(parsed: NLParser().parse(""), account: calendar.account, calendarId: calendar.id)
-        draft.summary = ""
-        // the empty parse is all-day; a timed event is busy, with the calendar's default alerts
-        draft.allDay = false
-        draft.busy = true
-        draft.reminders = Reminders()
-        draft.start = start
-        draft.end = end
+        var draft = EventDraft.timed(on: calendar, start: start, end: end)
         draft.invite(people.map { ($0.email, $0.name) })
         let form = EventEditorModel(newDraft: draft, agenda: agenda, writer: writer)
         newEvent = form

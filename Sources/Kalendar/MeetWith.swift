@@ -13,10 +13,7 @@ final class MeetWithWindowController {
 
     init(model: MeetWithModel) {
         self.model = model
-        model.showForm = { [weak self, weak model] form, closed in
-            self?.popover.show(EventEditor(model: form, onAdd: { model?.addEvent(form) }), in: self?.window, onClose: closed)
-        }
-        model.closeForm = { [weak self] in self?.popover.dismiss() }
+        model.showNew = { [weak self] form, closed in self?.popover.showNew(form, in: self?.window, onClose: closed) }
     }
 
     /// A sync changed the cache: the open window shows the user's new events; a closed one reads
@@ -60,12 +57,9 @@ final class MeetWithModel {
     var query = "" { didSet { if query != oldValue { refreshSuggestions() } } }
     private(set) var suggestions: [Contact] = []
     var selected = 0
-    /// The new-event form open on a clicked slot.
-    @ObservationIgnored private var newEvent: EventEditorModel?
     /// Shows a new-event form beside the pointer; the closure runs when it closes. Set by the window
-    /// controller, with `closeForm`.
-    @ObservationIgnored var showForm: (EventEditorModel, @escaping () -> Void) -> Void = { _, _ in }
-    @ObservationIgnored var closeForm: () -> Void = {}
+    /// controller.
+    @ObservationIgnored var showNew: (EventEditorModel, @escaping () -> Void) -> Void = { _, _ in }
     @ObservationIgnored private var contacts: [Contact]?
 
     init(agenda: AgendaModel, accounts: AccountStore, writer: EventWriter) {
@@ -178,24 +172,7 @@ final class MeetWithModel {
         guard let calendar = agenda.defaultCalendar(account: account) else { return }
         var draft = EventDraft.timed(on: calendar, start: start, end: end)
         draft.invite(people.map { ($0.email, $0.name) })
-        let form = EventEditorModel(newDraft: draft, agenda: agenda, writer: writer)
-        newEvent = form
-        showForm(form) { [weak self] in
-            if self?.newEvent === form { self?.newEvent = nil }
-            done()
-        }
-    }
-
-    func addEvent(_ form: EventEditorModel) {
-        guard form.canAdd else { return }
-        // a form closed or replaced while its Zoom meeting was created adds nothing
-        form.commit { [weak self] draft in
-            guard let self, newEvent === form else { return }
-            writer.insert(draft)
-            if Preferences.shared.playSounds { NSSound(named: "Pop")?.play() }
-            closeForm()
-            cacheChanged()
-        }
+        showNew(EventEditorModel(newDraft: draft, agenda: agenda, writer: writer), done)
     }
 }
 

@@ -308,6 +308,14 @@ public final class CalendarCache: @unchecked Sendable {
         try db.read { try EventInstance.fetchOne($0, key: ["account": account, "calendarId": calendarId, "id": id]) }
     }
 
+    /// The other accounts' cached copies of an event, when they cache its calendar too.
+    public func copies(calendarId: String, id: String, except account: String) throws -> [EventInstance] {
+        try db.read { db in
+            try EventInstance.filter(Column("calendarId") == calendarId && Column("id") == id && Column("account") != account)
+                .fetchAll(db)
+        }
+    }
+
     /// The cached occurrence of `series` just before or after `event` (§7.1).
     public func occurrence(after event: EventInstance, in series: String, forward: Bool) throws -> EventInstance? {
         try db.read { db in

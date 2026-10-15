@@ -179,3 +179,19 @@ public struct EventDraft: Equatable {
         ["attendees": attendees.responding(response).map(attendee)]
     }
 }
+
+extension EventDraft {
+    /// A new timed event's draft for [start, end) on `calendar`: untitled, busy, with the
+    /// calendar's default alerts.
+    public static func timed(on calendar: CalendarInfo, start: Date, end: Date) -> EventDraft {
+        var draft = EventDraft(parsed: NLParser().parse(""), account: calendar.account, calendarId: calendar.id)
+        draft.summary = ""
+        // the empty parse is all-day
+        draft.allDay = false
+        draft.busy = true
+        draft.reminders = Reminders()
+        draft.start = start
+        draft.end = end
+        return draft
+    }
+}

@@ -13,13 +13,8 @@ final class CalendarWindowController {
 
     init(model: CalendarWindowModel) {
         self.model = model
-        model.showForm = { [weak self] form, onAdd, closed in
-            guard let self else { return }
-            // an existing event saves on close (§6); a new one is added only by Add Event
-            let save: (() -> Bool)? = form.isNew ? nil : { form.shouldClose() }
-            popover.show(EventEditor(model: form, onAdd: onAdd), in: window, shouldClose: save, onClose: closed)
-        }
-        model.closeForm = { [weak self] in self?.popover.dismiss() }
+        model.showEvent = { [weak self] form in self?.popover.showExisting(form, in: self?.window) }
+        model.showNew = { [weak self] form, closed in self?.popover.showNew(form, in: self?.window, onClose: closed) }
     }
 
     /// A sync changed the cache: the open window shows it; a closed one reads it when it opens.
@@ -61,12 +56,18 @@ final class CalendarWindowModel {
     private(set) var anchor: Date
     /// The events in the shown range, as the agenda shows them (§4.3, §12).
     private(set) var events: [EventInstance] = []
+    /// The Day and Week views' blocks, and the Month view's events by day (all-day first, then by
+    /// start); made when the events change, not on each render.
+    private(set) var timedBlocks: [GridBlock] = []
+    private(set) var allDayBlocks: [GridBlock] = []
+    private(set) var eventsByDay: [Date: [EventInstance]] = [:]
+    /// The Month view's weeks: from the week holding the 1st through the week holding the last day.
+    private(set) var weeks: [[Date]] = []
 
-    /// Shows a form beside the pointer, with its Add Event action; the closure runs when it closes.
-    /// Set by the window controller, with `closeForm`.
-    @ObservationIgnored var showForm: (EventEditorModel, (() -> Void)?, @escaping () -> Void) -> Void = { _, _, _ in }
-    @ObservationIgnored var closeForm: () -> Void = {}
-    @ObservationIgnored private var newEvent: EventEditorModel?
+    /// Show an event's form, or a new event's (whose closure runs when it closes), beside the
+    /// pointer. Set by the window controller.
+    @ObservationIgnored var showEvent: (EventEditorModel) -> Void = { _ in }
+    @ObservationIgnored var showNew: (EventEditorModel, @escaping () -> Void) -> Void = { _, _ in }
 
     init(agenda: AgendaModel, accounts: AccountStore, writer: EventWriter) {
         self.agenda = agenda
@@ -88,8 +89,7 @@ final class CalendarWindowModel {
         }
     }
 
-    /// The Month view's weeks: from the week holding the 1st through the week holding the last day.
-    var weeks: [[Date]] {
+    private func monthWeeks() -> [[Date]] {
         guard let month = calendar.dateInterval(of: .month, for: anchor) else { return [] }
         var weeks: [[Date]] = []
         var start = weekStart(month.start)
@@ -138,14 +138,28 @@ final class CalendarWindowModel {
     }
 
     func reload() {
-        events = agenda.shown((try? agenda.cache.events(from: range.from, to: range.to)) ?? [])
+        let weeks = mode == .month ? monthWeeks() : []
+        if weeks != self.weeks { self.weeks = weeks }
+        let range = range
+        let shown = agenda.shown((try? agenda.cache.events(from: range.from, to: range.to)) ?? [])
+        // a sync that changed nothing shown redraws nothing
+        guard shown != events || loaded.map({ $0 != range }) ?? true else { return }
+        loaded = range
+        events = shown
+        timedBlocks = shown.filter { !$0.allDay }.map(block)
+        allDayBlocks = shown.filter(\.allDay).map(block)
+        eventsByDay = agenda.bucket(shown, from: range.from, to: range.to)
+            .mapValues { $0.sorted { ($0.allDay ? 0 : 1, $0.start) < ($1.allDay ? 0 : 1, $1.start) } }
     }
+
+    /// The range `events` was read for.
+    @ObservationIgnored private var loaded: (from: Date, to: Date)?
 
     // MARK: Blocks
 
     func block(_ e: EventInstance) -> GridBlock {
         GridBlock(id: e.key, start: e.start, end: e.end, title: e.summary, color: agenda.color(for: e),
-                  outlined: e.isTentative || e.isDeclined, movable: canMove(e))
+                  outlined: e.isTentative || e.isDeclined, movable: canMove(e), deletable: agenda.isWritable(e))
     }
 
     /// An invitation's time is the organizer's to change; a read-only calendar takes no writes.
@@ -158,36 +172,20 @@ final class CalendarWindowModel {
     /// The event's detail form, saved when it closes (§6).
     func open(_ id: String) {
         guard let event = event(id) else { return }
-        showForm(EventEditorModel(event: event, agenda: agenda, writer: writer), nil) {}
+        showEvent(EventEditorModel(event: event, agenda: agenda, writer: writer))
     }
 
     /// A new event's form for [start, end) on the default calendar (§12). `done` runs when it closes.
     func create(_ start: Date, _ end: Date, done: @escaping () -> Void = {}) {
         guard let calendar = agenda.defaultCalendar(account: accounts.accounts.first?.email) else { return }
         let draft = EventDraft.timed(on: calendar, start: start, end: end)
-        let form = EventEditorModel(newDraft: draft, agenda: agenda, writer: writer)
-        newEvent = form
-        showForm(form, { [weak self] in self?.add(form) }) { [weak self] in
-            if self?.newEvent === form { self?.newEvent = nil }
-            done()
-        }
+        showNew(EventEditorModel(newDraft: draft, agenda: agenda, writer: writer), done)
     }
 
     /// A month day's empty space: an event of the default duration at the day's start (§12).
     func create(on day: Date) {
         let start = calendar.date(bySettingHour: Preferences.shared.dayStartHour, minute: 0, second: 0, of: day) ?? day
         create(start, start.addingTimeInterval(TimeInterval(Preferences.shared.defaultDuration * 60)))
-    }
-
-    private func add(_ form: EventEditorModel) {
-        guard form.canAdd else { return }
-        // a form closed or replaced while its Zoom meeting was created adds nothing
-        form.commit { [weak self] draft in
-            guard let self, newEvent === form else { return }
-            writer.insert(draft)
-            if Preferences.shared.playSounds { NSSound(named: "Pop")?.play() }
-            closeForm()
-        }
     }
 
     // MARK: Moves
@@ -218,9 +216,9 @@ final class CalendarWindowModel {
         move(id, start: start, end: end)
     }
 
-    /// Delete, from a block's menu (§8.2).
+    /// Delete, from an event's menu (§8.2): any event on a calendar the user can write, as in the agenda.
     func delete(_ id: String) {
-        guard let event = event(id), canMove(event), let scope = Dialogs.scope(for: event) else { return }
+        guard let event = event(id), agenda.isWritable(event), let scope = Dialogs.scope(for: event) else { return }
         writer.delete(event, scope: scope)
     }
 }
@@ -264,9 +262,7 @@ struct CalendarView: View {
             WriteErrorNotice(writer: model.writer)
             switch model.mode {
             case .day, .week:
-                let timed = model.events.filter { !$0.allDay }.map(model.block)
-                let allDay = model.events.filter(\.allDay).map(model.block)
-                TimeGrid(days: model.days, columns: [timed], allDay: allDay,
+                TimeGrid(days: model.days, columns: [model.timedBlocks], allDay: model.allDayBlocks,
                          onCreate: { start, end, done in model.create(start, end, done: done) },
                          onOpen: { model.open($0.id) },
                          onMove: { block, start, end in model.move(block.id, start: start, end: end) },
@@ -329,9 +325,7 @@ private struct MonthDayCell: View {
 
     var body: some View {
         let calendar = Preferences.shared.calendar
-        let next = calendar.date(byAdding: .day, value: 1, to: day) ?? day
-        let events = model.events.filter { $0.start < next && $0.end > day }
-            .sorted { ($0.allDay ? 0 : 1, $0.start) < ($1.allDay ? 0 : 1, $1.start) }
+        let events = model.eventsByDay[day] ?? []
         let inMonth = calendar.isDate(day, equalTo: model.anchor, toGranularity: .month)
         let today = calendar.isDateInToday(day)
         // with more than fit, the last row says how many more
@@ -354,7 +348,7 @@ private struct MonthDayCell: View {
                     .onTapGesture { model.open(e.key) }
                     .draggable(e.key)
                     .contextMenu {
-                        if model.canMove(e) { Button("Delete") { model.delete(e.key) } }
+                        if model.agenda.isWritable(e) { Button("Delete") { model.delete(e.key) } }
                     }
             }
             if shown.count < events.count {

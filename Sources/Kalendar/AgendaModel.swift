@@ -280,7 +280,7 @@ final class AgendaModel {
     }
 
     /// Each event under every day it overlaps. A timed event ending at midnight stops the day before.
-    private func bucket(_ events: [EventInstance], from: Date, to: Date) -> [Date: [EventInstance]] {
+    func bucket(_ events: [EventInstance], from: Date, to: Date) -> [Date: [EventInstance]] {
         var result: [Date: [EventInstance]] = [:]
         for e in events {
             var day = max(calendar.startOfDay(for: e.start), from)

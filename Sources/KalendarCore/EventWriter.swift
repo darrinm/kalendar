@@ -104,10 +104,8 @@ public final class EventWriter {
     /// The other accounts' cached copies of `event` with an edit's shared fields, so they don't show
     /// the old version until their next sync. Each keeps its own response, alerts and color.
     private func otherCopies(of event: EventInstance, editedTo updated: EventInstance) -> [EventInstance] {
-        let accounts = ((try? cache.calendars()) ?? []).filter { $0.id == event.calendarId && $0.account != event.account }
-        return accounts.compactMap { calendar in
-            guard var copy = try? cache.event(account: calendar.account, calendarId: event.calendarId, id: event.id)
-            else { return nil }
+        ((try? cache.copies(calendarId: event.calendarId, id: event.id, except: event.account)) ?? []).map { copy in
+            var copy = copy
             copy.summary = updated.summary
             copy.location = updated.location
             copy.notes = updated.notes

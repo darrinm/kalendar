@@ -19,6 +19,8 @@ struct GridBlock: Identifiable, Equatable {
     var outlined = false
     /// Can be dragged to another time or resized (the grid's `onMove`).
     var movable = false
+    /// Offers Delete (the grid's `onDelete`).
+    var deletable = false
 }
 
 struct TimeGrid: View {
@@ -40,8 +42,7 @@ struct TimeGrid: View {
     @State private var highlight = SlotHighlight()
     @State private var moving = BlockMove()
 
-    static let hourHeight: CGFloat = 48
-    private var hourHeight: CGFloat { Self.hourHeight }
+    private let hourHeight: CGFloat = 48
     private let gutter: CGFloat = 56
     private let slot: TimeInterval = 30 * 60
     /// Moves and resizes snap to this.
@@ -122,7 +123,7 @@ struct TimeGrid: View {
     }
 
     @ViewBuilder private func deleteMenu(_ block: GridBlock) -> some View {
-        if let onDelete, block.movable { Button("Delete") { onDelete(block) } }
+        if let onDelete, block.deletable { Button("Delete") { onDelete(block) } }
     }
 
     // MARK: Grid
@@ -222,8 +223,8 @@ struct TimeGrid: View {
                             }
                             .onEnded { _ in
                                 defer { moving.move = nil }
-                                guard let move = moving.move, move.block.movable,
-                                      move.start != move.block.start || move.end != move.block.end
+                                // only a movable block's drag sets `moving.move`
+                                guard let move = moving.move, move.start != move.block.start || move.end != move.block.end
                                 else { return }
                                 onMove?(move.block, move.start, move.end)
                             }
@@ -410,11 +411,8 @@ private struct BlockMoveView: View {
 struct BlockView: View {
     let block: GridBlock
 
-    private var times: String {
-        "\(block.start.formatted(date: .omitted, time: .shortened)) – \(block.end.formatted(date: .omitted, time: .shortened))"
-    }
-
     var body: some View {
+        let times = Formatting.timeRange(block.start, block.end)
         GeometryReader { geo in
             VStack(alignment: .leading, spacing: 0) {
                 Text(block.title ?? "Busy").uiFont(11, weight: .semibold).lineLimit(geo.size.height > 30 ? 2 : 1)

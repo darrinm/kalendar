@@ -112,9 +112,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.terminate(nil)
             }
         }
-        // `open Kalendar.app --args -openPopoverAtLaunch YES` opens the popover for UI testing.
-        // Delayed because the status item has no on-screen position yet at launch, and NSPopover
-        // silently refuses to show against it.
         // `--args -openCalendarAtLaunch YES` opens the calendar window, for UI testing
         if UserDefaults.standard.bool(forKey: "openCalendarAtLaunch") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.showCalendar() }
@@ -130,6 +127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 showMeetWith()
             }
         }
+        // `open Kalendar.app --args -openPopoverAtLaunch YES` opens the popover for UI testing.
+        // Delayed because the status item has no on-screen position yet at launch, and NSPopover
+        // silently refuses to show against it.
         if UserDefaults.standard.bool(forKey: "openPopoverAtLaunch") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.togglePopover() }
         }

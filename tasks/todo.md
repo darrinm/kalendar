@@ -125,3 +125,10 @@ Decisions (2026-10-14, from the user): Day, Week and Month views; view, edit, cr
 - Verified in the app on darrin@massena.com (Saturday Oct 17, no guests, deleted after): created "Kalendar window test" from a click (Zoom default switched to None first), moved it by dragging (2:00 → 3:00), resized its end (4:00 → 4:30), opened its detail form, dragged it in Month to Oct 24, deleted it from its context menu. Day, Week and Month render the real calendars.
 - Found and fixed while testing: a block's gestures sat at the grid's corner (attached after `.offset`); the create gesture took presses meant for blocks (now a layer under them); the window could keep a read-only copy of an identical event (now the writable copy, in the agenda too); other accounts' copies showed the old time after an edit (now updated).
 - Not done: Google's "send updates to guests?" choice; Kalendar always notifies guests of an organizer's edit (asked about by the user, 2026-10-14).
+
+## Send update emails to guests (branch `send-updates-choice`, 2026-10-15)
+Decision (user): Send / Don't Send / Cancel only; no message (the Calendar API has no message field).
+- [x] `EventWriter.save`/`delete` take `notifyGuests`; `Dialogs.notifyGuests` asks for events the user organizes with guests; detail popover save, calendar-window move/resize/delete, context-menu quick edits and Delete ask. Own-only changes (alerts, color, busy/free) ask nothing and email nobody.
+- [x] Tests: `sendUpdates` is all / none / none for Send, Don't Send, delete-Don't-Send; `changesWhatGuestsSee`.
+- [x] Verified in the app: an event on darrin@massena.com with darrin@playful.software as guest; a drag showed "Send update emails to guests?", Don't Send moved it; Delete showed "Send cancellation emails to guests?", Don't Send deleted it.
+

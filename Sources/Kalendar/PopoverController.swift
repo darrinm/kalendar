@@ -608,8 +608,9 @@ final class PopoverModel {
 
     func delete(_ event: EventInstance) {
         // ⌫ on a read-only calendar's event: Google would refuse it
-        guard agenda.isWritable(event), let scope = Dialogs.scope(for: event) else { return }
-        writer.delete(event, scope: scope)
+        guard agenda.isWritable(event), let scope = Dialogs.scope(for: event),
+              let notify = Dialogs.notifyGuests(about: event, deleting: true) else { return }
+        writer.delete(event, scope: scope, notifyGuests: notify)
         agenda.selection = nil
     }
 
@@ -623,9 +624,10 @@ final class PopoverModel {
         let original = EventDraft(event, recurrence: nil)
         var draft = original
         change(&draft)
-        guard draft != original, agenda.isWritable(event), let scope = Dialogs.scope(for: event) else { return }
+        guard draft != original, agenda.isWritable(event), let scope = Dialogs.scope(for: event),
+              let notify = Dialogs.notifyGuests(about: event, from: original, to: draft) else { return }
         // color, busy/free and visibility need none of the series' own data (its times or rule)
-        writer.save(event, original: original, draft: draft, scope: scope, series: nil)
+        writer.save(event, original: original, draft: draft, scope: scope, series: nil, notifyGuests: notify)
     }
 
     func setSelected(_ selected: Bool, calendar: CalendarInfo) {

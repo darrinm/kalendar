@@ -166,7 +166,8 @@ final class EventEditorModel {
         // a repeat change belongs to the whole series, so it needs no question
         let asked = isRecurring && draft.recurrence != original.recurrence ? .series : Dialogs.scope(for: event)
         guard let scope = asked else { return false }
-        writer.save(event, original: original, draft: draft, scope: scope, series: series)
+        guard let notify = Dialogs.notifyGuests(about: event, from: original, to: draft) else { return false }
+        writer.save(event, original: original, draft: draft, scope: scope, series: series, notifyGuests: notify)
         return true
     }
 

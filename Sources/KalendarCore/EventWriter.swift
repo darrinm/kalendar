@@ -63,7 +63,10 @@ public final class EventWriter {
     // MARK: Writes
 
     /// Saves the detail popover's edits. `series` is the master's data when `scope` is `.series`.
-    public func save(_ event: EventInstance, original: EventDraft, draft: EventDraft, scope: Scope, series: Series?) {
+    /// `notifyGuests` false: Google emails nobody, even for an event the user organizes with guests.
+    public func save(_ event: EventInstance, original: EventDraft, draft: EventDraft, scope: Scope, series: Series?,
+                     notifyGuests: Bool = true) {
+        let sendUpdates = Self.sendUpdates(event, editedTo: draft, notify: notifyGuests)
         let target = Self.target(event, scope)
         let toSeries = target.series != nil
         let fields = draft.patchBody(from: original, seriesTimes: toSeries ? series.map { ($0.start, $0.end) } : nil)
@@ -83,13 +86,13 @@ public final class EventWriter {
             if toSeries, let series, draft.recurrence != original.recurrence {
                 fields["recurrence"] = RecurrenceRule.replacing(draft.recurrence, in: series.recurrence, allDay: draft.allDay)
             }
-            let query = EventDraft.query(["sendUpdates": Self.sendUpdates(event)], for: fields)
+            let query = EventDraft.query(["sendUpdates": sendUpdates], for: fields)
             enqueue(queued("PATCH", event, id: target.id, query: query, body: fields,
                            ifMatch: toSeries ? series?.etag : event.etag, refreshSeries: target.series,
                            summary: draft.summary))
         }
         if moved {
-            enqueueMove(event: event, target: target, draft: draft, series: series)
+            enqueueMove(event: event, target: target, draft: draft, series: series, sendUpdates: sendUpdates)
             updated.account = draft.account
             updated.calendarId = draft.calendarId
         }
@@ -119,10 +122,10 @@ public final class EventWriter {
 
     /// Same account: `events.move`. Another account: insert a copy there, then delete the original
     /// (offered only for events the user organizes, §6.1).
-    private func enqueueMove(event: EventInstance, target: Target, draft: EventDraft, series: Series?) {
+    private func enqueueMove(event: EventInstance, target: Target, draft: EventDraft, series: Series?, sendUpdates: String) {
         if draft.account == event.account {
             enqueue(queued("POST", event, id: target.id, suffix: "/move",
-                           query: ["destination": draft.calendarId, "sendUpdates": Self.sendUpdates(event)],
+                           query: ["destination": draft.calendarId, "sendUpdates": sendUpdates],
                            refreshSeries: target.series, summary: draft.summary))
             return
         }
@@ -164,9 +167,9 @@ public final class EventWriter {
         Task { await flush() }
     }
 
-    public func delete(_ event: EventInstance, scope: Scope) {
+    public func delete(_ event: EventInstance, scope: Scope, notifyGuests: Bool = true) {
         let target = Self.target(event, scope)
-        enqueue(queued("DELETE", event, id: target.id, query: ["sendUpdates": Self.sendUpdates(event)]))
+        enqueue(queued("DELETE", event, id: target.id, query: ["sendUpdates": Self.sendUpdates(event, notify: notifyGuests)]))
         try? cache.deleteEvent(calendarId: event.calendarId, id: event.id, series: target.series)
         // an invitation someone else organized cannot be restored by Kalendar (§8.2)
         undoableDelete = event.isInvitation ? nil : event
@@ -216,9 +219,15 @@ public final class EventWriter {
     }
 
     /// Guests hear about changes to events the user organizes; nobody hears about changes to an
-    /// event without guests or to the user's copy of someone else's invitation.
-    static func sendUpdates(_ event: EventInstance) -> String {
-        event.organizerSelf && event.attendees.count > 1 ? "all" : "none"
+    /// event without guests or to the user's copy of someone else's invitation. `draft` is the
+    /// edit: guests it adds to an event that had none are invited.
+    public static func emailsGuests(_ event: EventInstance, editedTo draft: EventDraft? = nil) -> Bool {
+        event.organizerSelf && max(event.attendees.count, draft?.attendees.count ?? 0) > 1
+    }
+
+    /// `notify` false is the user's Don't Send (§8.6).
+    static func sendUpdates(_ event: EventInstance, editedTo draft: EventDraft? = nil, notify: Bool = true) -> String {
+        notify && emailsGuests(event, editedTo: draft) ? "all" : "none"
     }
 
     /// The event a write goes to: this occurrence, or for `.series` the master; `series` is the

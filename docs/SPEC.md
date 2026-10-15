@@ -367,6 +367,9 @@ The reference app shows upsell messages for its paid features. Not applicable.
 - **Contacts** come from the Google People API under the same sign‑in (§18.4). Kalendar does not request macOS Contacts access.
 - Kalendar needs no privacy usage strings in Info.plist and no hardened‑runtime resource entitlements (no calendars, contacts, reminders, or location).
 
+### 8.6 Send update emails to guests **[decision]**
+Before a change or delete of an event the user organizes that has guests, as Google Calendar asks: **"Send update emails to guests?"** (a delete: **"Send cancellation emails to guests?"**) / "Google can email the guests of “<title>” about the change." (… "that it's cancelled.") / **Send** (`accent`, default) · **Don't Send** · **Cancel**. Send writes with `sendUpdates=all`, Don't Send with `none`; Cancel keeps the detail popover open, or leaves a dragged event where it was. Asked after the repeating‑event question (§8.1), for: the detail popover's save, a move or resize in the calendar window (§22), the context menu's Color › / Show As › / Visibility ›, and Delete. Not asked, and nobody emailed, when the change is only the user's own alerts, color or busy/free (Google keeps those per guest), or when the event moves to another account's calendar (an insert and a delete, written without emails). Adding the first guests to an event asks too: Send invites them. The Calendar API has no field for a message to guests, so there is none.
+
 ---
 
 ## 9. Search
@@ -645,5 +648,5 @@ The reference app's full calendar window (§4.4 "Open Full Calendar Window ⌘O"
   - Dragging an event moves it: whole days across, 15‑minute steps up and down. Dragging its bottom 6 pt changes its end (at least 15 minutes). The event is dimmed and a copy shows where it would land. Read‑only calendars and invitations don't move.
   - An event's context menu has **Delete** (§8.2).
 - **Month:** the weeks holding the month, a cell per day: the date (today in an accent circle; days outside the month dimmed), then the day's events, all‑day first as colored bars, timed ones as a dot, start time and title; more than fit show as "+N more". A click on the date or "+N more" opens that day in Day; on an event, its detail form; on empty space, a new event at the day's start hour. Events drag to another day (same time of day); the context menu has Delete.
-- **Writes:** moves and resizes go through `EventWriter.save`. A repeating event asks (§8.1); "All" loads the series first and moves it by the same amount. Guests hear about it as for any edit (§5.4). An edit also updates the other accounts' cached copies of the event (shared fields only: each keeps its own response, alerts and color), so they don't show the old version until their next sync.
+- **Writes:** moves and resizes go through `EventWriter.save`. A repeating event asks (§8.1); "All" loads the series first and moves it by the same amount. Guests are emailed only if the user chooses Send (§8.6). An edit also updates the other accounts' cached copies of the event (shared fields only: each keeps its own response, alerts and color), so they don't show the old version until their next sync.
 

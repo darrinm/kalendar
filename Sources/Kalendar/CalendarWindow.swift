@@ -193,16 +193,18 @@ final class CalendarWindowModel {
     /// A drag's new times. A repeating event asks first (§8.1); "All" moves the series by the same
     /// amount, which needs the series' own times, loaded first.
     func move(_ id: String, start: Date, end: Date) {
-        guard let event = event(id), canMove(event), let scope = Dialogs.scope(for: event) else { return }
+        guard let event = event(id), canMove(event), let scope = Dialogs.scope(for: event),
+              let notify = Dialogs.notifyGuests(about: event) else { return }
         let original = EventDraft(event, recurrence: nil)
         var draft = original
         draft.start = start
         draft.end = end
         if scope == .occurrence {
-            writer.save(event, original: original, draft: draft, scope: scope, series: nil)
+            writer.save(event, original: original, draft: draft, scope: scope, series: nil, notifyGuests: notify)
         } else {
             Task {
-                writer.save(event, original: original, draft: draft, scope: scope, series: await writer.series(of: event))
+                writer.save(event, original: original, draft: draft, scope: scope, series: await writer.series(of: event),
+                            notifyGuests: notify)
             }
         }
     }
@@ -218,8 +220,9 @@ final class CalendarWindowModel {
 
     /// Delete, from an event's menu (§8.2): any event on a calendar the user can write, as in the agenda.
     func delete(_ id: String) {
-        guard let event = event(id), agenda.isWritable(event), let scope = Dialogs.scope(for: event) else { return }
-        writer.delete(event, scope: scope)
+        guard let event = event(id), agenda.isWritable(event), let scope = Dialogs.scope(for: event),
+              let notify = Dialogs.notifyGuests(about: event, deleting: true) else { return }
+        writer.delete(event, scope: scope, notifyGuests: notify)
     }
 }
 

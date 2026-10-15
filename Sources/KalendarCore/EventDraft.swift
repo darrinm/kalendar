@@ -78,6 +78,16 @@ public struct EventDraft: Equatable {
         return d
     }
 
+    /// Whether the edit from `original` changes what guests see. The user's own alerts, color and
+    /// busy/free don't: Google keeps those per person, so nobody needs an email about them.
+    public func changesWhatGuestsSee(from original: EventDraft) -> Bool {
+        var mine = self
+        mine.reminders = original.reminders
+        mine.colorId = original.colorId
+        mine.busy = original.busy
+        return mine != original
+    }
+
     /// The patch body for what differs from `original`, or nil when nothing does.
     ///
     /// `seriesTimes` is the master event's start and end when the edit applies to all occurrences

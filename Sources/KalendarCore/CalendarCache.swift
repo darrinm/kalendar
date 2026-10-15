@@ -145,6 +145,9 @@ public final class CalendarCache: @unchecked Sendable {
             try db.create(index: "event_calendar_id", on: "event", columns: ["calendarId", "id"])
             try db.create(index: "event_calendar_series", on: "event", columns: ["calendarId", "recurringEventId"])
         }
+        m.registerMigration("v8-contact-alias") { db in
+            try db.alter(table: "contact") { t in t.add(column: "isAlias", .boolean).notNull().defaults(to: false) }
+        }
         return m
     }
 
@@ -373,7 +376,8 @@ public final class CalendarCache: @unchecked Sendable {
                 FROM event, json_each(event.attendees)
                 WHERE NOT json_extract(value, '$.isSelf')
                 """).map { Contact(account: "", email: $0["email"], name: $0["name"], photoURL: nil) }
-            var seen = Set<String>()
+            // an alias address is left out wherever it came from: another account's contacts, an attendee
+            var seen = Set(saved.filter(\.isAlias).map { $0.email.lowercased() })
             return (saved + attendees).filter { seen.insert($0.email.lowercased()).inserted }
         }
     }

@@ -37,7 +37,24 @@ public enum GooglePeopleAPI {
     public struct Page: GoogleCalendarAPI.Paged {
         struct Person: Decodable {
             struct Name: Decodable { var displayName: String? }
-            struct Email: Decodable { var value: String? }
+            struct Email: Decodable {
+                struct Metadata: Decodable {
+                    struct Source: Decodable { var type: String? }
+                    var primary: Bool?
+                    var source: Source?
+                }
+                var value: String?
+                /// "home", "work", …; none on a directory person's aliases.
+                var type: String?
+                var metadata: Metadata?
+
+                /// A Workspace directory profile lists the person's primary address, the addresses
+                /// they gave (typed, such as a personal "home" one), and the domain's aliases for
+                /// them (untyped, such as old domains').
+                var isDirectoryAlias: Bool {
+                    metadata?.source?.type == "DOMAIN_PROFILE" && metadata?.primary != true && type == nil
+                }
+            }
             struct Photo: Decodable { var url: String?; var `default`: Bool? }
             var names: [Name]?
             var emailAddresses: [Email]?
@@ -48,13 +65,15 @@ public enum GooglePeopleAPI {
         var otherContacts: [Person]?
         var people: [Person]?
 
-        /// One contact per email address; a person with two addresses is two rows (§5.1).
+        /// One contact per email address; a person with two addresses is two rows (§5.1). A
+        /// directory alias is kept, marked, so `CalendarCache.allContacts` can leave it out wherever
+        /// else it turns up.
         public func contacts(account: String) -> [Contact] {
             (connections ?? otherContacts ?? people ?? []).flatMap { p -> [Contact] in
                 let name = p.names?.first?.displayName
                 let photo = p.photos?.first { $0.default != true }?.url
-                return (p.emailAddresses ?? []).compactMap(\.value).map {
-                    Contact(account: account, email: $0, name: name, photoURL: photo)
+                return (p.emailAddresses ?? []).compactMap { e in
+                    e.value.map { Contact(account: account, email: $0, name: name, photoURL: photo, isAlias: e.isDirectoryAlias) }
                 }
             }
         }

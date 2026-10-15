@@ -58,7 +58,8 @@ public final class SyncEngine {
         self.now = now
     }
 
-    private static func contactsKey(_ account: String) -> String { "contactsSynced.\(account)" }
+    /// "v2": contacts synced before aliases were marked (§18.4) are fetched again.
+    private static func contactsKey(_ account: String) -> String { "contactsSynced.v2.\(account)" }
 
     /// Syncs every signed-in account. A call while a sync runs schedules exactly one more after it.
     public func syncAll() async {

@@ -13,6 +13,29 @@ final class ContactsTests: XCTestCase {
         XCTAssertEqual(other.contacts(account: "a").map(\.email), ["x@example.com"])
     }
 
+    /// A directory profile's untyped, non-primary addresses are the domain's aliases (§18.4).
+    func testDirectoryAliasesAreMarkedAndNeverSuggested() throws {
+        let json = #"""
+        {"people":[{"names":[{"displayName":"Mike Harrington"}],"emailAddresses":[
+          {"value":"mike@playful.software","metadata":{"primary":true,"source":{"type":"DOMAIN_PROFILE"}}},
+          {"value":"mikehar@gmail.com","type":"home","metadata":{"source":{"type":"DOMAIN_PROFILE"}}},
+          {"value":"mike@hatch.one","metadata":{"source":{"type":"DOMAIN_PROFILE"}}},
+          {"value":"mike@playful.app","metadata":{"source":{"type":"DOMAIN_PROFILE"}}}]}]}
+        """#
+        let page = try JSONDecoder().decode(GooglePeopleAPI.Page.self, from: Data(json.utf8))
+        let directory = page.contacts(account: "work")
+        XCTAssertEqual(directory.filter(\.isAlias).map(\.email), ["mike@hatch.one", "mike@playful.app"])
+
+        let cache = try CalendarCache()
+        try cache.replaceContacts(directory, account: "work")
+        // the same alias saved under the other account, as an "other contact", still isn't suggested
+        try cache.replaceContacts([Contact(account: "home", email: "Mike@Hatch.one", name: nil, photoURL: nil),
+                                   Contact(account: "home", email: "mike@picnik.com", name: "Mike Harrington", photoURL: nil)],
+                                  account: "home")
+        XCTAssertEqual(Set(try cache.allContacts().matching("mike").map(\.email)),
+                       ["mike@playful.software", "mikehar@gmail.com", "mike@picnik.com"])
+    }
+
     func testSuggestionsRankNamePrefixFirstAndIncludeAttendees() throws {
         let cache = try CalendarCache()
         try cache.replaceContacts([

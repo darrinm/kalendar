@@ -213,12 +213,16 @@ public struct Contact: Codable, Equatable, Hashable, FetchableRecord, Persistabl
     public var email: String
     public var name: String?
     public var photoURL: String?
+    /// One of a directory person's alias addresses, such as a legacy domain's (§18.4). Never
+    /// suggested, from any source.
+    public var isAlias: Bool
 
-    public init(account: String, email: String, name: String?, photoURL: String?) {
+    public init(account: String, email: String, name: String?, photoURL: String?, isAlias: Bool = false) {
         self.account = account
         self.email = email
         self.name = name
         self.photoURL = photoURL
+        self.isAlias = isAlias
     }
 }
 

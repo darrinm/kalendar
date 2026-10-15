@@ -569,6 +569,7 @@ Tasks (Tasks v1):
   - `people.listDirectoryPeople` (Workspace directory), `readMask=names,emailAddresses,photos`, `sources=DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE`. Only for Workspace accounts (`playful.software`). **[decision]** Included because most invitees in the captured data are coworkers. A personal Gmail account returns an error for this call; Kalendar skips it for that account.
 - Both list calls support `requestSyncToken=true`; sync daily and on Refresh All.
 - Suggestions are filtered locally from the cache, so typing has no network latency. Kalendar does not use `searchContacts`.
+- **Aliases [decision]:** a directory profile lists the person's primary address (`metadata.primary`), addresses they added (typed, such as a personal `home` one), and the Workspace's aliases for them (untyped: `mike.harrington@playful.software`, and the legacy domains `hatch.one`, `hatchcanvas.com`, `hatchcanvas.site`, `playfulapp.com`, `playful.app`). Aliases are cached marked (`contact.isAlias`) and never suggested, wherever else the same address turns up: another account's contacts, "other contacts", or event attendees. Contacts synced before this (`contactsSynced.<account>`) are fetched again (`contactsSynced.v2.<account>`).
 - Photos are fetched from the returned `url` on first display and cached on disk.
 
 ---

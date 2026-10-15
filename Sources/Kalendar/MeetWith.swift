@@ -428,15 +428,12 @@ private struct WeekGrid: View {
         .frame(width: gutter + 7 * dayWidth, height: 24 * hourHeight, alignment: .topLeading)
         .contentShape(Rectangle())
         .onContinuousHover { phase in
-            switch phase {
-            // only a new slot redraws, and only the highlight view reads `highlight`; with the button down, a
-            // drag owns the highlight
-            case .active(let point):
-                guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
-                let span = slot(at: point, dayWidth: dayWidth).map(defaultSpan)
-                if span != highlight.span { highlight.span = span }
-            case .ended: if NSEvent.pressedMouseButtons & 1 == 0 { highlight.span = nil }
-            }
+            // with the button down, a drag owns the highlight
+            guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
+            // only a new slot redraws, and only the highlight view reads `highlight`
+            var span: Span?
+            if case .active(let point) = phase { span = slot(at: point, dayWidth: dayWidth).map(defaultSpan) }
+            if span != highlight.span { highlight.span = span }
         }
         // a click opens the form for the default duration; a drag, for the slots dragged across
         .gesture(DragGesture(minimumDistance: 0)

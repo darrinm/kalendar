@@ -27,6 +27,14 @@ enum Dialogs {
         }
     }
 
+    /// The question for an edit from `original` to `draft`. Nobody is emailed, so nothing is asked,
+    /// for a change to only the user's own alerts, color or busy/free, or for a move to another
+    /// account's calendar (an insert and a delete without emails, EventWriter.enqueueMove).
+    static func notifyGuests(about event: EventInstance, from original: EventDraft, to draft: EventDraft) -> Bool? {
+        guard draft.changesWhatGuestsSee(from: original), draft.account == original.account else { return false }
+        return notifyGuests(about: event, editedTo: draft)
+    }
+
     /// "Send update emails to guests?" before changing or deleting an event the user organizes that
     /// has guests, as Google Calendar asks. True for Send, false for Don't Send, nil for Cancel. An
     /// event Google wouldn't email anyone about needs no question: true. `draft` is the edit, which

@@ -166,11 +166,7 @@ final class EventEditorModel {
         // a repeat change belongs to the whole series, so it needs no question
         let asked = isRecurring && draft.recurrence != original.recurrence ? .series : Dialogs.scope(for: event)
         guard let scope = asked else { return false }
-        // the user's own alerts, color or busy/free email nobody; nor does a move to another account,
-        // which is written as an insert and a delete without emails (EventWriter.enqueueMove)
-        let notify = draft.changesWhatGuestsSee(from: original) && draft.account == original.account
-            ? Dialogs.notifyGuests(about: event, editedTo: draft) : false
-        guard let notify else { return false }
+        guard let notify = Dialogs.notifyGuests(about: event, from: original, to: draft) else { return false }
         writer.save(event, original: original, draft: draft, scope: scope, series: series, notifyGuests: notify)
         return true
     }

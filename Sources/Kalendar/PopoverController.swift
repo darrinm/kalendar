@@ -625,8 +625,7 @@ final class PopoverModel {
         var draft = original
         change(&draft)
         guard draft != original, agenda.isWritable(event), let scope = Dialogs.scope(for: event),
-              let notify = draft.changesWhatGuestsSee(from: original) ? Dialogs.notifyGuests(about: event) : false
-        else { return }
+              let notify = Dialogs.notifyGuests(about: event, from: original, to: draft) else { return }
         // color, busy/free and visibility need none of the series' own data (its times or rule)
         writer.save(event, original: original, draft: draft, scope: scope, series: nil, notifyGuests: notify)
     }

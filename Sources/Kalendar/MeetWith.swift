@@ -415,10 +415,11 @@ private struct WeekGrid: View {
                     let laid = Availability.lanes(blocks.compactMap { clip($0, to: day) })
                     ForEach(Array(laid.enumerated()), id: \.offset) { _, item in
                         let width = columnWidth / CGFloat(item.lanes)
+                        // inset 1 pt on every side, so events side by side or back to back keep a gap
                         BlockView(block: item.block, color: colors[column], busyOnly: busyOnly[column])
-                            .frame(width: max(width - 2, 2), height: max(y(item.block.end, in: day) - y(item.block.start, in: day), 14))
+                            .frame(width: max(width - 2, 2), height: max(y(item.block.end, in: day) - y(item.block.start, in: day) - 2, 12))
                             .offset(x: x + CGFloat(column) * columnWidth + CGFloat(item.lane) * width + 1,
-                                    y: y(item.block.start, in: day))
+                                    y: y(item.block.start, in: day) + 1)
                     }
                 }
             }

@@ -118,7 +118,7 @@ final class ZoomTests: XCTestCase {
 
     func testMeetingLinksOpenInTheWebClient() {
         func web(_ link: String) -> String {
-            ConferenceDetector.joinURL(for: URL(string: link)!, inBrowser: true, zoomApp: true).absoluteString
+            ConferenceDetector.joinURL(for: URL(string: link)!, zoom: .webClient).absoluteString
         }
         XCTAssertEqual(web("https://us02web.zoom.us/j/123?pwd=abc"), "https://us02web.zoom.us/wc/123/join?pwd=abc")
         XCTAssertEqual(web("https://zoom.us/j/123"), "https://zoom.us/wc/123/join")
@@ -139,12 +139,12 @@ final class ZoomTests: XCTestCase {
         }
         // with the setting off and no Zoom app, every link opens as it is
         let link = URL(string: "https://zoom.us/j/123")!
-        XCTAssertEqual(ConferenceDetector.joinURL(for: link, inBrowser: false, zoomApp: false), link)
+        XCTAssertEqual(ConferenceDetector.joinURL(for: link, zoom: .asIs), link)
     }
 
     func testMeetingLinksOpenTheZoomApp() {
         func app(_ link: String) -> String {
-            ConferenceDetector.joinURL(for: URL(string: link)!, inBrowser: false, zoomApp: true).absoluteString
+            ConferenceDetector.joinURL(for: URL(string: link)!, zoom: .app).absoluteString
         }
         XCTAssertEqual(app("https://us02web.zoom.us/j/123?pwd=abc"),
                        "zoommtg://us02web.zoom.us/join?action=join&confno=123&pwd=abc")

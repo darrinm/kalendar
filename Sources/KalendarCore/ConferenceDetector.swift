@@ -56,26 +56,38 @@ public enum ConferenceDetector {
         return "Video"
     }
 
-    /// The link Join opens (§4.3). A Zoom meeting link zoom.us/j/123?pwd=… opens Zoom's web client,
-    /// zoom.us/wc/123/join?pwd=…, with `inBrowser`; otherwise, with `zoomApp` (an app handles
-    /// zoommtg:), it opens the Zoom app directly, zoommtg://zoom.us/join?action=join&confno=123&pwd=…,
-    /// without Zoom's launcher page in the browser. Any other link is returned unchanged.
-    public static func joinURL(for url: URL, inBrowser: Bool, zoomApp: Bool) -> URL {
-        guard inBrowser || zoomApp, var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+    /// Where Join sends a Zoom meeting link (§4.3).
+    public enum ZoomJoin {
+        /// the link as it is
+        case asIs
+        /// Zoom's web client, zoom.us/wc/<id>/join
+        case webClient
+        /// the Zoom app, zoommtg://zoom.us/join?action=join&confno=<id>, without Zoom's launcher page
+        case app
+    }
+
+    /// The link Join opens (§4.3). A Zoom /j/<id> link is rewritten for `zoom`, keeping its query
+    /// (the passcode). Any other link is returned unchanged.
+    public static func joinURL(for url: URL, zoom: ZoomJoin) -> URL {
+        guard zoom != .asIs, var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               isZoomHost(parts.host?.lowercased() ?? "") else { return url }
         // exactly /j/<id>, with or without a trailing slash
         let segments = parts.path.split(separator: "/")
         guard segments.count == 2, segments[0].lowercased() == "j" else { return url }
-        if inBrowser {
-            parts.path = "/wc/\(segments[1])/join"
-        } else {
+        let id = segments[1]
+        switch zoom {
+        case .asIs:
+            return url
+        case .webClient:
+            parts.path = "/wc/\(id)/join"
+        case .app:
             // a meeting ID is digits; anything else would be invalid in the percent-encoded query
-            guard segments[1].allSatisfy(\.isASCII), segments[1].allSatisfy(\.isNumber) else { return url }
+            guard id.allSatisfy({ ("0"..."9").contains($0) }) else { return url }
             parts.scheme = "zoommtg"
             parts.path = "/join"
             // percent-encoded items keep the passcode's encoding: a decoded %2B would go back as "+"
             parts.percentEncodedQueryItems = [URLQueryItem(name: "action", value: "join"),
-                                              URLQueryItem(name: "confno", value: String(segments[1]))]
+                                              URLQueryItem(name: "confno", value: String(id))]
                 + (parts.percentEncodedQueryItems ?? [])
             parts.fragment = nil
         }

@@ -7,8 +7,8 @@ import KalendarCore
 @MainActor
 enum Meeting {
     static func join(_ url: URL) {
-        let inBrowser = Preferences.shared.zoomInBrowser
-        let zoomApp = !inBrowser && NSWorkspace.shared.urlForApplication(toOpen: URL(string: "zoommtg://zoom.us")!) != nil
-        NSWorkspace.shared.open(ConferenceDetector.joinURL(for: url, inBrowser: inBrowser, zoomApp: zoomApp))
+        let zoom: ConferenceDetector.ZoomJoin = Preferences.shared.zoomInBrowser ? .webClient
+            : NSWorkspace.shared.urlForApplication(toOpen: URL(string: "zoommtg://zoom.us")!) != nil ? .app : .asIs
+        NSWorkspace.shared.open(ConferenceDetector.joinURL(for: url, zoom: zoom))
     }
 }

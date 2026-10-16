@@ -118,7 +118,7 @@ final class ZoomTests: XCTestCase {
 
     func testMeetingLinksOpenInTheWebClient() {
         func web(_ link: String) -> String {
-            ConferenceDetector.joinURL(for: URL(string: link)!, inBrowser: true).absoluteString
+            ConferenceDetector.joinURL(for: URL(string: link)!, inBrowser: true, zoomApp: true).absoluteString
         }
         XCTAssertEqual(web("https://us02web.zoom.us/j/123?pwd=abc"), "https://us02web.zoom.us/wc/123/join?pwd=abc")
         XCTAssertEqual(web("https://zoom.us/j/123"), "https://zoom.us/wc/123/join")
@@ -137,8 +137,27 @@ final class ZoomTests: XCTestCase {
         ] {
             XCTAssertEqual(web(unchanged), unchanged, unchanged)
         }
-        // with the setting off, every link opens as it is
+        // with the setting off and no Zoom app, every link opens as it is
         let link = URL(string: "https://zoom.us/j/123")!
-        XCTAssertEqual(ConferenceDetector.joinURL(for: link, inBrowser: false), link)
+        XCTAssertEqual(ConferenceDetector.joinURL(for: link, inBrowser: false, zoomApp: false), link)
+    }
+
+    func testMeetingLinksOpenTheZoomApp() {
+        func app(_ link: String) -> String {
+            ConferenceDetector.joinURL(for: URL(string: link)!, inBrowser: false, zoomApp: true).absoluteString
+        }
+        XCTAssertEqual(app("https://us02web.zoom.us/j/123?pwd=abc"),
+                       "zoommtg://us02web.zoom.us/join?action=join&confno=123&pwd=abc")
+        XCTAssertEqual(app("https://zoom.us/j/123"), "zoommtg://zoom.us/join?action=join&confno=123")
+        XCTAssertEqual(app("https://zoom.us/j/123/?pwd=abc#success"),
+                       "zoommtg://zoom.us/join?action=join&confno=123&pwd=abc")
+        for unchanged in [
+            "https://zoom.us/my/someone",
+            "https://meet.google.com/abc-defg-hij",
+            "https://notzoom.us/j/123",
+            "https://zoom.us/j/123/extra",
+        ] {
+            XCTAssertEqual(app(unchanged), unchanged, unchanged)
+        }
     }
 }

@@ -56,15 +56,26 @@ public enum ConferenceDetector {
         return "Video"
     }
 
-    /// The link Join opens (§4.3). With `inBrowser`, a Zoom meeting link zoom.us/j/123?pwd=… opens
-    /// Zoom's web client, zoom.us/wc/123/join?pwd=…. Any other link is returned unchanged.
-    public static func joinURL(for url: URL, inBrowser: Bool) -> URL {
-        guard inBrowser, var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+    /// The link Join opens (§4.3). A Zoom meeting link zoom.us/j/123?pwd=… opens Zoom's web client,
+    /// zoom.us/wc/123/join?pwd=…, with `inBrowser`; otherwise, with `zoomApp` (an app handles
+    /// zoommtg:), it opens the Zoom app directly, zoommtg://zoom.us/join?action=join&confno=123&pwd=…,
+    /// without Zoom's launcher page in the browser. Any other link is returned unchanged.
+    public static func joinURL(for url: URL, inBrowser: Bool, zoomApp: Bool) -> URL {
+        guard inBrowser || zoomApp, var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               isZoomHost(parts.host?.lowercased() ?? "") else { return url }
         // exactly /j/<id>, with or without a trailing slash
         let segments = parts.path.split(separator: "/")
         guard segments.count == 2, segments[0].lowercased() == "j" else { return url }
-        parts.path = "/wc/\(segments[1])/join"
+        if inBrowser {
+            parts.path = "/wc/\(segments[1])/join"
+        } else {
+            parts.scheme = "zoommtg"
+            parts.path = "/join"
+            parts.queryItems = [URLQueryItem(name: "action", value: "join"),
+                                URLQueryItem(name: "confno", value: String(segments[1]))]
+                + (parts.queryItems ?? [])
+            parts.fragment = nil
+        }
         return parts.url ?? url
     }
 

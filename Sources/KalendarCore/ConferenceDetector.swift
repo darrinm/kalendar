@@ -69,11 +69,14 @@ public enum ConferenceDetector {
         if inBrowser {
             parts.path = "/wc/\(segments[1])/join"
         } else {
+            // a meeting ID is digits; anything else would be invalid in the percent-encoded query
+            guard segments[1].allSatisfy(\.isASCII), segments[1].allSatisfy(\.isNumber) else { return url }
             parts.scheme = "zoommtg"
             parts.path = "/join"
-            parts.queryItems = [URLQueryItem(name: "action", value: "join"),
-                                URLQueryItem(name: "confno", value: String(segments[1]))]
-                + (parts.queryItems ?? [])
+            // percent-encoded items keep the passcode's encoding: a decoded %2B would go back as "+"
+            parts.percentEncodedQueryItems = [URLQueryItem(name: "action", value: "join"),
+                                              URLQueryItem(name: "confno", value: String(segments[1]))]
+                + (parts.percentEncodedQueryItems ?? [])
             parts.fragment = nil
         }
         return parts.url ?? url

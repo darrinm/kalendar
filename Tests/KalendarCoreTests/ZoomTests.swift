@@ -151,11 +151,14 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(app("https://zoom.us/j/123"), "zoommtg://zoom.us/join?action=join&confno=123")
         XCTAssertEqual(app("https://zoom.us/j/123/?pwd=abc#success"),
                        "zoommtg://zoom.us/join?action=join&confno=123&pwd=abc")
+        // the passcode keeps its percent-encoding
+        XCTAssertEqual(app("https://zoom.us/j/123?pwd=a%2Bb"), "zoommtg://zoom.us/join?action=join&confno=123&pwd=a%2Bb")
         for unchanged in [
             "https://zoom.us/my/someone",
             "https://meet.google.com/abc-defg-hij",
             "https://notzoom.us/j/123",
             "https://zoom.us/j/123/extra",
+            "https://zoom.us/j/12%2034",            // a meeting ID that is not digits
         ] {
             XCTAssertEqual(app(unchanged), unchanged, unchanged)
         }

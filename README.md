@@ -29,8 +29,8 @@ them in System Settings › Internet Accounts, or both apps will deliver alerts.
 - **Join:** the current or next video meeting gets a Join button in the agenda, in its alert, and
   as a "Join <name>" item in the menu bar. Kalendar finds Google Meet, Zoom, Teams, Webex and
   FaceTime links.
-- **Video conferencing:** new events can get a Google Meet or Zoom link automatically. Zoom
-  meetings can open in the browser instead of the Zoom app.
+- **Video conferencing:** new events can get a Google Meet or Zoom link automatically. Join
+  opens Zoom meetings in the Zoom app, or in Zoom's web client if you choose.
 - **Calendar window** (⌘O): Day, Week and Month views. Drag an event to move it, drag its bottom
   edge to change its end, and click or drag empty time to create an event.
 - **Meet With** (⇧⌘M): add people and see their calendars next to yours for a week. Click or drag
@@ -47,6 +47,11 @@ them in System Settings › Internet Accounts, or both apps will deliver alerts.
 The full behavior is specified in [docs/SPEC.md](docs/SPEC.md).
 
 ## What's new
+
+### 0.1.19 — 2026-10-16
+- Join opens Zoom meetings directly in the Zoom app, skipping the browser launcher page, when
+  the Zoom app is installed and **Open Zoom meetings in browser** is off. The passcode is kept.
+  (#29)
 
 ### 0.1.18 — 2026-10-15
 - Before you change or delete an event you organize that has guests, Kalendar asks "Send update

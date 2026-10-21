@@ -148,6 +148,8 @@ final class EventEditorModel {
     /// On a calendar the user can only read (holidays, a shared calendar): Google refuses every
     /// write, so nothing is editable.
     var isReadOnlyCalendar: Bool { !agenda.isWritable(event) }
+    /// Accept / Decline / Maybe: Google refuses a reply through a calendar shared read-only.
+    var canRespond: Bool { isInvitation && !isReadOnlyCalendar }
     var isRecurring: Bool { event.recurringEventId != nil }
     var hasChanges: Bool { draft != original || (isNew && video != originalVideo) }
 

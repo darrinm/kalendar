@@ -155,16 +155,22 @@ public final class EventWriter {
 
     /// Accept / Decline / Maybe (§6, §6.2): `accepted`, `declined` or `tentative`.
     public func respond(_ event: EventInstance, response: String, scope: Scope) {
-        let target = Self.target(event, scope)
+        try? cache.upsert([enqueueResponse(event, response, Self.target(event, scope))])
+        engine.onChange()
+        Task { await flush() }
+    }
+
+    /// Queues the PATCH for a reply and returns `event` with the reply applied, for the cache.
+    private func enqueueResponse(_ event: EventInstance, _ response: String, _ target: Target) -> EventInstance {
         let attendees = event.attendees.responding(response)
-        enqueue(queued("PATCH", event, id: target.id, query: ["sendUpdates": "all"],
-                       body: ["attendees": attendees.map(EventDraft.attendee)], refreshSeries: target.series))
+        var write = queued("PATCH", event, id: target.id, query: ["sendUpdates": "all"],
+                           body: ["attendees": attendees.map(EventDraft.attendee)], refreshSeries: target.series)
+        if target.series != nil { write.response = response }
+        enqueue(write)
         var updated = event
         updated.selfResponse = response
         updated.attendees = attendees
-        try? cache.upsert([updated])
-        engine.onChange()
-        Task { await flush() }
+        return updated
     }
 
     public func delete(_ event: EventInstance, scope: Scope, notifyGuests: Bool = true) {
@@ -316,6 +322,8 @@ public final class EventWriter {
                     insert.ifMatch = nil
                     insert.refreshSeries = nil
                     try? cache.enqueue(insert)
+                } else if status == 404, let response = write.response, let series = write.refreshSeries {
+                    answerOccurrences(of: series, write, response)
                 } else {
                     report(write, GoogleCalendarAPI.APIError.http(status).localizedDescription)
                     await refetch(write)
@@ -324,6 +332,14 @@ public final class EventWriter {
             }
         }
         if changed { engine.onChange() }
+    }
+
+    /// A whole-series reply that found no series master: the user was invited to some occurrences
+    /// only, so the calendar holds just those. The reply is queued for each cached occurrence, and
+    /// the running drain sends those writes.
+    private func answerOccurrences(of series: String, _ write: PendingWrite, _ response: String) {
+        let occurrences = (try? cache.occurrences(of: series, account: write.account, calendarId: write.calendarId)) ?? []
+        try? cache.upsert(occurrences.map { enqueueResponse($0, response, Self.target($0, .occurrence)) })
     }
 
     /// Later writes to the same event assumed the dropped one succeeded (the delete half of a move

@@ -148,6 +148,9 @@ public final class CalendarCache: @unchecked Sendable {
         m.registerMigration("v8-contact-alias") { db in
             try db.alter(table: "contact") { t in t.add(column: "isAlias", .boolean).notNull().defaults(to: false) }
         }
+        m.registerMigration("v9-series-response") { db in
+            try db.alter(table: "pendingWrite") { t in t.add(column: "response", .text) }
+        }
         return m
     }
 
@@ -316,11 +319,20 @@ public final class CalendarCache: @unchecked Sendable {
         }
     }
 
+    /// Every cached occurrence of `series` on one calendar.
+    public func occurrences(of series: String, account: String, calendarId: String) throws -> [EventInstance] {
+        try db.read { try Self.series(series, account: account, calendarId: calendarId).fetchAll($0) }
+    }
+
+    private static func series(_ series: String, account: String, calendarId: String) -> QueryInterfaceRequest<EventInstance> {
+        EventInstance.filter(Column("account") == account && Column("calendarId") == calendarId
+                             && Column("recurringEventId") == series)
+    }
+
     /// The cached occurrence of `series` just before or after `event` (§7.1).
     public func occurrence(after event: EventInstance, in series: String, forward: Bool) throws -> EventInstance? {
         try db.read { db in
-            let rows = EventInstance.filter(Column("account") == event.account && Column("calendarId") == event.calendarId
-                                            && Column("recurringEventId") == series)
+            let rows = Self.series(series, account: event.account, calendarId: event.calendarId)
             return forward
                 ? try rows.filter(Column("start") > event.start).order(Column("start")).fetchOne(db)
                 : try rows.filter(Column("start") < event.start).order(Column("start").desc).fetchOne(db)
@@ -347,15 +359,18 @@ public final class CalendarCache: @unchecked Sendable {
         }
     }
 
-    /// Invitations awaiting the user's reply (§6.2): visible calendars, today −7 days … +90 days,
-    /// not organized by the user; for a series, only its next pending occurrence.
+    /// Invitations awaiting the user's reply (§6.2): visible calendars the account can write, today
+    /// −7 days … +90 days, not organized by the user; for a series, only its next pending occurrence.
+    /// On a calendar shared read-only (another account's calendar, a colleague's), Google marks that
+    /// calendar's owner as `self` and refuses a reply.
     public func pendingInvitations(now: Date) throws -> [EventInstance] {
         let from = now.addingTimeInterval(-7 * 86400), to = now.addingTimeInterval(90 * 86400)
         let rows = try db.read { db in
             try EventInstance.fetchAll(db, sql: """
                 SELECT event.* FROM event JOIN calendar
                   ON calendar.account = event.account AND calendar.id = event.calendarId
-                WHERE calendar.selected AND event.selfResponse = 'needsAction' AND NOT event.organizerSelf
+                WHERE calendar.selected AND calendar.accessRole IN ('owner', 'writer')  -- CalendarInfo.isWritable
+                  AND event.selfResponse = 'needsAction' AND NOT event.organizerSelf
                   AND event.end > ? AND event.start < ?
                 ORDER BY event.start
                 """, arguments: [from, to])

@@ -176,6 +176,28 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertTrue(try cache.search("Weekly", scope: .title).isEmpty)
     }
 
+    /// Invited to some occurrences of a series only: the calendar has no master, so the instances
+    /// request answers 404. The changed occurrence is applied on its own and the other one stays.
+    func testChangedOccurrenceWithoutAMasterIsKept() async throws {
+        serveFirstSync(events: [
+            Self.timed("w_1", "Weekly", start: "2026-10-12T20:00:00Z", end: "2026-10-12T21:00:00Z", recurringEventId: "w"),
+            Self.timed("w_2", "Weekly", start: "2026-10-19T20:00:00Z", end: "2026-10-19T21:00:00Z", recurringEventId: "w"),
+        ])
+        await engine.syncAll()
+        let first = google.handler
+        google.handler = { request, q in
+            guard let token = q["syncToken"] else { return first(request, q) }
+            return request.url!.path.contains("primary") && token == "t1"
+                ? (200, #"{"items":[\#(Self.timed("w_1", "Weekly (moved)", start: "2026-10-12T21:00:00Z", end: "2026-10-12T22:00:00Z", recurringEventId: "w"))],"nextSyncToken":"t2"}"#)
+                : (200, #"{"items":[],"nextSyncToken":"t2"}"#)
+        }
+        await engine.syncAll()
+        XCTAssertEqual(engine.state, .idle)
+        XCTAssertTrue(google.log.contains { $0.hasSuffix("/events/w/instances") })
+        let week = try cache.events(from: now.addingTimeInterval(-86400), to: now.addingTimeInterval(8 * 86400))
+        XCTAssertEqual(week.map(\.summary), ["Weekly (moved)", "Weekly"])
+    }
+
     func testSetSelectedWritesGoogleAndRevertsOnFailure() async throws {
         serveFirstSync(events: [])
         await engine.syncAll()

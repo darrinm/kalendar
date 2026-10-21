@@ -223,6 +223,41 @@ final class EventWriterTests: XCTestCase {
                        ["accepted", "accepted"])
     }
 
+    /// Another account that subscribes to the calendar read-only also has a copy where Google marks
+    /// the user as `self`. Google refuses a reply through it, so only the writable copy is listed.
+    func testInvitationOnAReadOnlyCopyIsNotListed() async throws {
+        try cache.replaceCalendars([
+            CalendarInfo(account: "work@example.com", id: "primary", summary: "Me", backgroundColor: "#000000",
+                         accessRole: "reader", selected: true, primary: false),
+        ], account: "work@example.com")
+        let me = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "needsAction")
+        let e = event(attendees: [me], organizer: false)
+        var shared = e
+        shared.account = "work@example.com"
+        try cache.upsert([e, shared])
+        XCTAssertEqual(try cache.pendingInvitations(now: now).map(\.key), [e.key])
+    }
+
+    /// Invited to some occurrences of a series only: the calendar has no master, so Google answers a
+    /// reply to All with 404. Each cached occurrence answers instead.
+    func testSeriesReplyWithoutAMasterAnswersEachOccurrence() async throws {
+        let me = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "needsAction")
+        let e = event(id: "w_20261012", attendees: [me], organizer: false, series: "w")
+        try cache.upsert([e, event(id: "w_20261019", attendees: [me], organizer: false, series: "w")])
+        google.handler = { r, _ in
+            let id = r.url!.lastPathComponent
+            return id == "w" ? (404, "{}") : (200, self.serverEvent(id, title: "Standup"))
+        }
+        writer.respond(e, response: "accepted", scope: .series)
+        await writer.flush()
+        XCTAssertNil(writer.error)
+        XCTAssertEqual(google.requests.map { "\($0.httpMethod!) \($0.url!.lastPathComponent)" }.sorted(),
+                       ["PATCH w", "PATCH w_20261012", "PATCH w_20261019"])
+        for patch in google.requests.dropFirst() {
+            XCTAssertEqual((patch.json?["attendees"] as? [[String: Any]])?.first?["responseStatus"] as? String, "accepted")
+        }
+    }
+
     func testSeriesDeleteTargetsTheMaster() async throws {
         let e = event(id: "w_20261012", series: "w")
         try cache.upsert([e, event(id: "w_20261019", series: "w")])

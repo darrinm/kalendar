@@ -148,6 +148,9 @@ public final class CalendarCache: @unchecked Sendable {
         m.registerMigration("v8-contact-alias") { db in
             try db.alter(table: "contact") { t in t.add(column: "isAlias", .boolean).notNull().defaults(to: false) }
         }
+        m.registerMigration("v9-series-response") { db in
+            try db.alter(table: "pendingWrite") { t in t.add(column: "response", .text) }
+        }
         return m
     }
 
@@ -347,15 +350,18 @@ public final class CalendarCache: @unchecked Sendable {
         }
     }
 
-    /// Invitations awaiting the user's reply (§6.2): visible calendars, today −7 days … +90 days,
-    /// not organized by the user; for a series, only its next pending occurrence.
+    /// Invitations awaiting the user's reply (§6.2): visible calendars the account can write, today
+    /// −7 days … +90 days, not organized by the user; for a series, only its next pending occurrence.
+    /// On a calendar shared read-only (another account's calendar, a colleague's), Google marks that
+    /// calendar's owner as `self` and refuses a reply.
     public func pendingInvitations(now: Date) throws -> [EventInstance] {
         let from = now.addingTimeInterval(-7 * 86400), to = now.addingTimeInterval(90 * 86400)
         let rows = try db.read { db in
             try EventInstance.fetchAll(db, sql: """
                 SELECT event.* FROM event JOIN calendar
                   ON calendar.account = event.account AND calendar.id = event.calendarId
-                WHERE calendar.selected AND event.selfResponse = 'needsAction' AND NOT event.organizerSelf
+                WHERE calendar.selected AND calendar.accessRole IN ('owner', 'writer')
+                  AND event.selfResponse = 'needsAction' AND NOT event.organizerSelf
                   AND event.end > ? AND event.start < ?
                 ORDER BY event.start
                 """, arguments: [from, to])

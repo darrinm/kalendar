@@ -178,6 +178,9 @@ public struct PendingWrite: Codable, Equatable, FetchableRecord, MutablePersista
     /// For an insert: the id of the cached placeholder it replaces, removed when Google's copy
     /// (with its new id) arrives. A move to another account caches the event under its old id.
     public var replaces: String?
+    /// For Accept / Decline / Maybe on a whole series: the response. When the calendar has no
+    /// series master (the user was invited to some occurrences only), each occurrence answers.
+    public var response: String?
     /// The event's title, for error messages.
     public var summary: String
     public var createdAt: Date

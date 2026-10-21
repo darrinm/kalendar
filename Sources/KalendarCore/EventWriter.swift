@@ -157,8 +157,10 @@ public final class EventWriter {
     public func respond(_ event: EventInstance, response: String, scope: Scope) {
         let target = Self.target(event, scope)
         let attendees = event.attendees.responding(response)
-        enqueue(queued("PATCH", event, id: target.id, query: ["sendUpdates": "all"],
-                       body: ["attendees": attendees.map(EventDraft.attendee)], refreshSeries: target.series))
+        var write = queued("PATCH", event, id: target.id, query: ["sendUpdates": "all"],
+                           body: ["attendees": attendees.map(EventDraft.attendee)], refreshSeries: target.series)
+        if target.series != nil { write.response = response }
+        enqueue(write)
         var updated = event
         updated.selfResponse = response
         updated.attendees = attendees
@@ -316,6 +318,8 @@ public final class EventWriter {
                     insert.ifMatch = nil
                     insert.refreshSeries = nil
                     try? cache.enqueue(insert)
+                } else if status == 404, let response = write.response, let series = write.refreshSeries {
+                    answerOccurrences(of: series, write, response)
                 } else {
                     report(write, GoogleCalendarAPI.APIError.http(status).localizedDescription)
                     await refetch(write)
@@ -324,6 +328,14 @@ public final class EventWriter {
             }
         }
         if changed { engine.onChange() }
+    }
+
+    /// A whole-series reply that found no series master: the user was invited to some occurrences
+    /// only, so the calendar holds just those. Each cached occurrence answers on its own.
+    private func answerOccurrences(of series: String, _ write: PendingWrite, _ response: String) {
+        let occurrences = ((try? cache.events(account: write.account, calendarId: write.calendarId)) ?? [])
+            .filter { $0.recurringEventId == series }
+        for event in occurrences { respond(event, response: response, scope: .occurrence) }
     }
 
     /// Later writes to the same event assumed the dropped one succeeded (the delete half of a move

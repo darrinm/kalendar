@@ -18,12 +18,12 @@ struct EventEditor: View {
             ScrollView {
                 content
                     .padding([.horizontal, .top], 16)
-                    .padding(.bottom, model.isInvitation ? 16 : 8)
+                    .padding(.bottom, model.canRespond ? 16 : 8)
             }
-            if model.isInvitation { Theme.line.frame(height: 1) }
+            if model.canRespond { Theme.line.frame(height: 1) }
             VStack(alignment: .leading, spacing: 8) {
                 WriteError(writer: model.writer)
-                if model.isInvitation {
+                if model.canRespond {
                     RSVPButtons(current: model.response) { model.respond($0) }
                 } else if !readOnly {
                     actions
@@ -31,7 +31,7 @@ struct EventEditor: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding([.horizontal, .bottom], 16)
-            .padding(.top, model.isInvitation ? 16 : 0)
+            .padding(.top, model.canRespond ? 16 : 0)
         }
         .frame(maxHeight: 640)
         .fixedSize(horizontal: false, vertical: true)

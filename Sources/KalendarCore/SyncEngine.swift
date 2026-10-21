@@ -199,11 +199,13 @@ public final class SyncEngine {
         var upserts: [EventInstance] = []
         var deleted = Set<String>()
         var series = Set<String>()
+        var occurrences: [String: [GoogleCalendarAPI.GoogleEvent]] = [:]
         for item in items {
             if item.isRecurringMaster {
                 series.insert(item.id)
             } else if let master = item.recurringEventId {
                 series.insert(master)
+                occurrences[master, default: []].append(item)
             } else if item.isCancelled {
                 deleted.insert(item.id)
             } else if let instance = item.instance(account: calendar.account, calendarId: calendar.id) {
@@ -212,7 +214,20 @@ public final class SyncEngine {
         }
         var replaced: [String: [EventInstance]] = [:]
         for id in series {
-            replaced[id] = try await instances(of: id, in: calendar)
+            if let fresh = try await instances(of: id, in: calendar) {
+                replaced[id] = fresh
+            } else if let changed = occurrences[id] {
+                // no master on this calendar: the user was invited to some occurrences only
+                for item in changed {
+                    if item.isCancelled {
+                        deleted.insert(item.id)
+                    } else if let instance = item.instance(account: calendar.account, calendarId: calendar.id) {
+                        upserts.append(instance)
+                    }
+                }
+            } else {
+                replaced[id] = []
+            }
         }
         if !items.isEmpty {
             try cache.applyChanges(account: calendar.account, calendarId: calendar.id,
@@ -224,16 +239,17 @@ public final class SyncEngine {
         try cache.saveCalendar(updated)
     }
 
-    /// A series' instances in the calendar's window; empty when the series was deleted.
-    private func instances(of seriesId: String, in calendar: CalendarInfo) async throws -> [EventInstance] {
+    /// A series' instances in the calendar's window; nil when the calendar has no such series (it
+    /// was deleted, or the user was invited to some of its occurrences only).
+    private func instances(of seriesId: String, in calendar: CalendarInfo) async throws -> [EventInstance]? {
         guard let from = calendar.windowStart, let to = calendar.windowEnd else { return [] }
         do {
             return try await eventPages(calendar) {
                 GoogleCalendarAPI.instancesRequest(calendarId: calendar.id, eventId: seriesId, from: from, to: to, pageToken: $0)
             }.flatMap { parsed($0, calendar: calendar) }
         } catch let error as GoogleCalendarAPI.APIError where error == .notFound || error == .syncTokenExpired {
-            // 404 or 410 Gone on an instances request means the series was deleted
-            return []
+            // 404 or 410 Gone on an instances request means the calendar has no master for the series
+            return nil
         }
     }
 
@@ -303,7 +319,7 @@ public final class SyncEngine {
         guard let calendar = try? cache.calendars(account: account).first(where: { $0.id == calendarId }),
               let fresh = try? await instances(of: seriesId, in: calendar) else { return }
         try? cache.applyChanges(account: account, calendarId: calendarId, upserts: [], deletedIds: [],
-                                replacedSeries: [seriesId: fresh])
+                                replacedSeries: [seriesId: fresh ?? []])
     }
 
     private func parsed(_ page: GoogleCalendarAPI.EventsPage, calendar: CalendarInfo) -> [EventInstance] {

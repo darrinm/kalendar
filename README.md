@@ -48,6 +48,14 @@ The full behavior is specified in [docs/SPEC.md](docs/SPEC.md).
 
 ## What's new
 
+### 0.1.20 — 2026-10-21
+- Notifications lists an invitation once. A calendar shared read-only into another signed-in
+  account no longer adds a second copy, and Accept / Decline / Maybe appear only on calendars you
+  can edit. (#31)
+- Accept / Decline / Maybe with **All** works when you were invited to some occurrences of a
+  repeating event only. Before, Google returned HTTP 404. (#31)
+- Those occurrences no longer disappear from Kalendar after one of them changes. (#31)
+
 ### 0.1.19 — 2026-10-16
 - Join opens Zoom meetings directly in the Zoom app, skipping the browser launcher page, when
   the Zoom app is installed and **Open Zoom meetings in browser** is off. The passcode is kept.

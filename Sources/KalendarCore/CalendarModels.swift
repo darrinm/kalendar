@@ -179,7 +179,8 @@ public struct PendingWrite: Codable, Equatable, FetchableRecord, MutablePersista
     /// (with its new id) arrives. A move to another account caches the event under its old id.
     public var replaces: String?
     /// For Accept / Decline / Maybe on a whole series: the response. When the calendar has no
-    /// series master (the user was invited to some occurrences only), each occurrence answers.
+    /// series master (the user was invited to some occurrences only), the reply is sent to each
+    /// cached occurrence instead.
     public var response: String?
     /// The event's title, for error messages.
     public var summary: String

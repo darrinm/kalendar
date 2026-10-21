@@ -319,11 +319,20 @@ public final class CalendarCache: @unchecked Sendable {
         }
     }
 
+    /// Every cached occurrence of `series` on one calendar.
+    public func occurrences(of series: String, account: String, calendarId: String) throws -> [EventInstance] {
+        try db.read { try Self.series(series, account: account, calendarId: calendarId).fetchAll($0) }
+    }
+
+    private static func series(_ series: String, account: String, calendarId: String) -> QueryInterfaceRequest<EventInstance> {
+        EventInstance.filter(Column("account") == account && Column("calendarId") == calendarId
+                             && Column("recurringEventId") == series)
+    }
+
     /// The cached occurrence of `series` just before or after `event` (§7.1).
     public func occurrence(after event: EventInstance, in series: String, forward: Bool) throws -> EventInstance? {
         try db.read { db in
-            let rows = EventInstance.filter(Column("account") == event.account && Column("calendarId") == event.calendarId
-                                            && Column("recurringEventId") == series)
+            let rows = Self.series(series, account: event.account, calendarId: event.calendarId)
             return forward
                 ? try rows.filter(Column("start") > event.start).order(Column("start")).fetchOne(db)
                 : try rows.filter(Column("start") < event.start).order(Column("start").desc).fetchOne(db)
@@ -360,7 +369,7 @@ public final class CalendarCache: @unchecked Sendable {
             try EventInstance.fetchAll(db, sql: """
                 SELECT event.* FROM event JOIN calendar
                   ON calendar.account = event.account AND calendar.id = event.calendarId
-                WHERE calendar.selected AND calendar.accessRole IN ('owner', 'writer')
+                WHERE calendar.selected AND calendar.accessRole IN ('owner', 'writer')  -- CalendarInfo.isWritable
                   AND event.selfResponse = 'needsAction' AND NOT event.organizerSelf
                   AND event.end > ? AND event.start < ?
                 ORDER BY event.start

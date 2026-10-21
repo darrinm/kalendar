@@ -200,16 +200,21 @@ public final class SyncEngine {
         var deleted = Set<String>()
         var series = Set<String>()
         var occurrences: [String: [GoogleCalendarAPI.GoogleEvent]] = [:]
+        func apply(_ item: GoogleCalendarAPI.GoogleEvent) {
+            if item.isCancelled {
+                deleted.insert(item.id)
+            } else if let instance = item.instance(account: calendar.account, calendarId: calendar.id) {
+                upserts.append(instance)
+            }
+        }
         for item in items {
             if item.isRecurringMaster {
                 series.insert(item.id)
             } else if let master = item.recurringEventId {
                 series.insert(master)
                 occurrences[master, default: []].append(item)
-            } else if item.isCancelled {
-                deleted.insert(item.id)
-            } else if let instance = item.instance(account: calendar.account, calendarId: calendar.id) {
-                upserts.append(instance)
+            } else {
+                apply(item)
             }
         }
         var replaced: [String: [EventInstance]] = [:]
@@ -218,13 +223,7 @@ public final class SyncEngine {
                 replaced[id] = fresh
             } else if let changed = occurrences[id] {
                 // no master on this calendar: the user was invited to some occurrences only
-                for item in changed {
-                    if item.isCancelled {
-                        deleted.insert(item.id)
-                    } else if let instance = item.instance(account: calendar.account, calendarId: calendar.id) {
-                        upserts.append(instance)
-                    }
-                }
+                changed.forEach(apply)
             } else {
                 replaced[id] = []
             }
@@ -315,11 +314,14 @@ public final class SyncEngine {
     }
 
     /// Replaces a series' cached instances with Google's current ones (after a write to the series).
+    /// When the calendar has no master for the series (404 or 410), the cached instances stay: the
+    /// user may be invited to some occurrences only, and a deleted series arrives as a cancelled
+    /// master in the next incremental sync.
     public func refreshSeries(_ seriesId: String, account: String, calendarId: String) async {
         guard let calendar = try? cache.calendars(account: account).first(where: { $0.id == calendarId }),
               let fresh = try? await instances(of: seriesId, in: calendar) else { return }
         try? cache.applyChanges(account: account, calendarId: calendarId, upserts: [], deletedIds: [],
-                                replacedSeries: [seriesId: fresh ?? []])
+                                replacedSeries: [seriesId: fresh])
     }
 
     private func parsed(_ page: GoogleCalendarAPI.EventsPage, calendar: CalendarInfo) -> [EventInstance] {

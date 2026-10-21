@@ -239,7 +239,7 @@ final class EventWriterTests: XCTestCase {
     }
 
     /// Invited to some occurrences of a series only: the calendar has no master, so Google answers a
-    /// reply to All with 404. Each cached occurrence answers instead.
+    /// reply to All with 404. The reply is then sent to each cached occurrence.
     func testSeriesReplyWithoutAMasterAnswersEachOccurrence() async throws {
         let me = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "needsAction")
         let e = event(id: "w_20261012", attendees: [me], organizer: false, series: "w")

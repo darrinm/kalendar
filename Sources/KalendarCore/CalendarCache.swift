@@ -324,6 +324,21 @@ public final class CalendarCache: @unchecked Sendable {
         try db.read { try Self.series(series, account: account, calendarId: calendarId).fetchAll($0) }
     }
 
+    /// Whether Accept / Decline / Maybe on `event` asks Only This Event / All (§6): a recurring
+    /// event that is answered already, or whose series has another unanswered occurrence ending
+    /// after `now`. A failed read asks.
+    public func responseAsksScope(_ event: EventInstance, now: Date) -> Bool {
+        guard let series = event.recurringEventId else { return false }
+        guard event.isUnanswered else { return true }
+        let othersAnswered = try? db.read { db in
+            try Self.series(series, account: event.account, calendarId: event.calendarId)
+                .filter(Column("id") != event.id && Column("end") > now
+                        && Column("selfResponse") == "needsAction" && !Column("organizerSelf"))
+                .isEmpty(db)
+        }
+        return othersAnswered != true
+    }
+
     private static func series(_ series: String, account: String, calendarId: String) -> QueryInterfaceRequest<EventInstance> {
         EventInstance.filter(Column("account") == account && Column("calendarId") == calendarId
                              && Column("recurringEventId") == series)

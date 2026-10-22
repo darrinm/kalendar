@@ -615,7 +615,7 @@ final class PopoverModel {
     }
 
     func respond(_ event: EventInstance, _ response: String) {
-        guard let scope = Dialogs.scope(for: event) else { return }
+        guard let scope = Dialogs.responseScope(for: event, cache: agenda.cache) else { return }
         writer.respond(event, response: response, scope: scope)
     }
 

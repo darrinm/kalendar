@@ -258,6 +258,28 @@ final class EventWriterTests: XCTestCase {
         }
     }
 
+    /// An occurrence the organizer moved in a series the user accepted is answered without asking (§6).
+    func testResponseAsksScope() throws {
+        let pending = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "needsAction")
+        let accepted = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "accepted")
+        var past = event(id: "w_20261005", attendees: [pending], organizer: false, series: "w")
+        past.start = start.addingTimeInterval(-7 * 86400)
+        past.end = past.start.addingTimeInterval(1800)
+        let moved = event(id: "w_20261012", attendees: [pending], organizer: false, series: "w")
+        var next = event(id: "w_20261019", attendees: [accepted], organizer: false, series: "w")
+        next.start = start.addingTimeInterval(7 * 86400)
+        next.end = next.start.addingTimeInterval(1800)
+        try cache.upsert([past, moved, next])
+        XCTAssertFalse(cache.responseAsksScope(moved, now: now), "a past unanswered occurrence doesn't count")
+        XCTAssertFalse(cache.responseAsksScope(event(attendees: [pending], organizer: false), now: now), "one-off")
+        XCTAssertTrue(cache.responseAsksScope(next, now: now), "changing an answered occurrence")
+
+        next.attendees = [pending]
+        next.selfResponse = "needsAction"
+        try cache.upsert([next])
+        XCTAssertTrue(cache.responseAsksScope(moved, now: now), "another upcoming occurrence unanswered")
+    }
+
     func testSeriesDeleteTargetsTheMaster() async throws {
         let e = event(id: "w_20261012", series: "w")
         try cache.upsert([e, event(id: "w_20261019", series: "w")])

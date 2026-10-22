@@ -10,6 +10,11 @@ enum Dialogs {
         event.recurringEventId == nil ? .occurrence : recurringScope()
     }
 
+    /// The scope of Accept / Decline / Maybe on `event`. nil means Cancel.
+    static func responseScope(for event: EventInstance, cache: CalendarCache) -> EventWriter.Scope? {
+        cache.responseAsksScope(event, now: Date()) ? recurringScope() : .occurrence
+    }
+
     /// "You're responding to a repeating event." Only This Event / All / Cancel. nil means Cancel.
     static func recurringScope() -> EventWriter.Scope? {
         NSApp.activate(ignoringOtherApps: true)

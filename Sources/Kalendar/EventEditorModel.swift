@@ -175,7 +175,7 @@ final class EventEditorModel {
 
     /// Accept / Decline / Maybe from the popover's button row.
     func respond(_ response: String) {
-        guard let scope = Dialogs.scope(for: event) else { return }
+        guard let scope = Dialogs.responseScope(for: event, cache: agenda.cache) else { return }
         writer.respond(event, response: response, scope: scope)
         self.response = response
     }

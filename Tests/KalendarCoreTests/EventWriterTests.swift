@@ -260,8 +260,9 @@ final class EventWriterTests: XCTestCase {
 
     /// The organizer moved one occurrence of a series the user accepted: Google resets the reply on
     /// that occurrence only, so Accept answers it without asking about the series (§6). A new
-    /// series invitation, with other upcoming occurrences unanswered, asks.
-    func testOtherOccurrenceAwaitsReply() throws {
+    /// series invitation, with other upcoming occurrences unanswered, asks, and so does a change to
+    /// an answered occurrence.
+    func testResponseAsksScope() throws {
         let pending = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "needsAction")
         let accepted = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "accepted")
         var past = event(id: "w_20261005", attendees: [pending], organizer: false, series: "w")
@@ -272,13 +273,14 @@ final class EventWriterTests: XCTestCase {
         next.start = start.addingTimeInterval(7 * 86400)
         next.end = next.start.addingTimeInterval(1800)
         try cache.upsert([past, moved, next])
-        XCTAssertFalse(try cache.otherOccurrenceAwaitsReply(moved, now: now), "a past unanswered occurrence doesn't count")
-        XCTAssertFalse(try cache.otherOccurrenceAwaitsReply(event(attendees: [pending], organizer: false), now: now))
+        XCTAssertFalse(cache.responseAsksScope(moved, now: now), "a past unanswered occurrence doesn't count")
+        XCTAssertFalse(cache.responseAsksScope(event(attendees: [pending], organizer: false), now: now), "one-off")
+        XCTAssertTrue(cache.responseAsksScope(next, now: now), "changing an answered occurrence")
 
         next.attendees = [pending]
         next.selfResponse = "needsAction"
         try cache.upsert([next])
-        XCTAssertTrue(try cache.otherOccurrenceAwaitsReply(moved, now: now))
+        XCTAssertTrue(cache.responseAsksScope(moved, now: now))
     }
 
     func testSeriesDeleteTargetsTheMaster() async throws {

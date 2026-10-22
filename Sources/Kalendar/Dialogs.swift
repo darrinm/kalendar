@@ -10,13 +10,10 @@ enum Dialogs {
         event.recurringEventId == nil ? .occurrence : recurringScope()
     }
 
-    /// The scope of Accept / Decline / Maybe on `event`. The question is asked only when another
-    /// upcoming occurrence of the series also awaits a reply. When the organizer moves or renames
-    /// one occurrence of a series the user accepted, Google resets the reply on that occurrence
-    /// only. A reply to the series master does not change that occurrence, so it is answered alone.
-    /// nil means Cancel.
+    /// The scope of Accept / Decline / Maybe on `event`: the question only when
+    /// `CalendarCache.responseAsksScope` says so. nil means Cancel.
     static func responseScope(for event: EventInstance, cache: CalendarCache) -> EventWriter.Scope? {
-        (try? cache.otherOccurrenceAwaitsReply(event, now: Date())) == true ? recurringScope() : .occurrence
+        cache.responseAsksScope(event, now: Date()) ? recurringScope() : .occurrence
     }
 
     /// "You're responding to a repeating event." Only This Event / All / Cancel. nil means Cancel.

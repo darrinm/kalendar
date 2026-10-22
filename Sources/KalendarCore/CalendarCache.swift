@@ -324,12 +324,21 @@ public final class CalendarCache: @unchecked Sendable {
         try db.read { try Self.series(series, account: account, calendarId: calendarId).fetchAll($0) }
     }
 
-    /// Whether an occurrence of `event`'s series other than `event`, ending after `now`, awaits the
-    /// user's reply. False for a one-off event.
-    public func otherOccurrenceAwaitsReply(_ event: EventInstance, now: Date) throws -> Bool {
+    /// Whether Accept / Decline / Maybe on `event` asks Only This Event / All (§6, §8.1). A one-off
+    /// event doesn't. An unanswered occurrence doesn't when no other occurrence of its series ending
+    /// after `now` awaits a reply: when the organizer moves or renames one occurrence of a series the
+    /// user accepted, Google resets the reply on that occurrence only, and a reply to the series
+    /// master doesn't change it. A change to an existing reply asks, so the whole series can change.
+    /// A failed cache read asks.
+    public func responseAsksScope(_ event: EventInstance, now: Date) -> Bool {
         guard let series = event.recurringEventId else { return false }
-        return try occurrences(of: series, account: event.account, calendarId: event.calendarId)
-            .contains { $0.id != event.id && $0.end > now && $0.isUnanswered }
+        guard event.isUnanswered else { return true }
+        let others = try? db.read { db in
+            try Self.series(series, account: event.account, calendarId: event.calendarId)
+                .filter(Column("id") != event.id && Column("end") > now && Column("selfResponse") == "needsAction")
+                .fetchAll(db)
+        }
+        return others?.contains(where: \.isUnanswered) ?? true
     }
 
     private static func series(_ series: String, account: String, calendarId: String) -> QueryInterfaceRequest<EventInstance> {

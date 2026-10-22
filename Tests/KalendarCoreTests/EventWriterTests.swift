@@ -258,10 +258,7 @@ final class EventWriterTests: XCTestCase {
         }
     }
 
-    /// The organizer moved one occurrence of a series the user accepted: Google resets the reply on
-    /// that occurrence only, so Accept answers it without asking about the series (§6). A new
-    /// series invitation, with other upcoming occurrences unanswered, asks, and so does a change to
-    /// an answered occurrence.
+    /// An occurrence the organizer moved in a series the user accepted is answered without asking (§6).
     func testResponseAsksScope() throws {
         let pending = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "needsAction")
         let accepted = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "accepted")
@@ -280,7 +277,7 @@ final class EventWriterTests: XCTestCase {
         next.attendees = [pending]
         next.selfResponse = "needsAction"
         try cache.upsert([next])
-        XCTAssertTrue(cache.responseAsksScope(moved, now: now))
+        XCTAssertTrue(cache.responseAsksScope(moved, now: now), "another upcoming occurrence unanswered")
     }
 
     func testSeriesDeleteTargetsTheMaster() async throws {

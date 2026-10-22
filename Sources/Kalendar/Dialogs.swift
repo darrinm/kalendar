@@ -10,8 +10,7 @@ enum Dialogs {
         event.recurringEventId == nil ? .occurrence : recurringScope()
     }
 
-    /// The scope of Accept / Decline / Maybe on `event`: the question only when
-    /// `CalendarCache.responseAsksScope` says so. nil means Cancel.
+    /// The scope of Accept / Decline / Maybe on `event`. nil means Cancel.
     static func responseScope(for event: EventInstance, cache: CalendarCache) -> EventWriter.Scope? {
         cache.responseAsksScope(event, now: Date()) ? recurringScope() : .occurrence
     }

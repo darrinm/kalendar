@@ -324,6 +324,14 @@ public final class CalendarCache: @unchecked Sendable {
         try db.read { try Self.series(series, account: account, calendarId: calendarId).fetchAll($0) }
     }
 
+    /// Whether an occurrence of `event`'s series other than `event`, ending after `now`, awaits the
+    /// user's reply. False for a one-off event.
+    public func otherOccurrenceAwaitsReply(_ event: EventInstance, now: Date) throws -> Bool {
+        guard let series = event.recurringEventId else { return false }
+        return try occurrences(of: series, account: event.account, calendarId: event.calendarId)
+            .contains { $0.id != event.id && $0.end > now && $0.isUnanswered }
+    }
+
     private static func series(_ series: String, account: String, calendarId: String) -> QueryInterfaceRequest<EventInstance> {
         EventInstance.filter(Column("account") == account && Column("calendarId") == calendarId
                              && Column("recurringEventId") == series)

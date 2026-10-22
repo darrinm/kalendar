@@ -258,6 +258,29 @@ final class EventWriterTests: XCTestCase {
         }
     }
 
+    /// The organizer moved one occurrence of a series the user accepted: Google resets the reply on
+    /// that occurrence only, so Accept answers it without asking about the series (§6). A new
+    /// series invitation, with other upcoming occurrences unanswered, asks.
+    func testOtherOccurrenceAwaitsReply() throws {
+        let pending = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "needsAction")
+        let accepted = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "accepted")
+        var past = event(id: "w_20261005", attendees: [pending], organizer: false, series: "w")
+        past.start = start.addingTimeInterval(-7 * 86400)
+        past.end = past.start.addingTimeInterval(1800)
+        let moved = event(id: "w_20261012", attendees: [pending], organizer: false, series: "w")
+        var next = event(id: "w_20261019", attendees: [accepted], organizer: false, series: "w")
+        next.start = start.addingTimeInterval(7 * 86400)
+        next.end = next.start.addingTimeInterval(1800)
+        try cache.upsert([past, moved, next])
+        XCTAssertFalse(try cache.otherOccurrenceAwaitsReply(moved, now: now), "a past unanswered occurrence doesn't count")
+        XCTAssertFalse(try cache.otherOccurrenceAwaitsReply(event(attendees: [pending], organizer: false), now: now))
+
+        next.attendees = [pending]
+        next.selfResponse = "needsAction"
+        try cache.upsert([next])
+        XCTAssertTrue(try cache.otherOccurrenceAwaitsReply(moved, now: now))
+    }
+
     func testSeriesDeleteTargetsTheMaster() async throws {
         let e = event(id: "w_20261012", series: "w")
         try cache.upsert([e, event(id: "w_20261019", series: "w")])

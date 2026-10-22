@@ -48,6 +48,11 @@ The full behavior is specified in [docs/SPEC.md](docs/SPEC.md).
 
 ## What's new
 
+### 0.1.21 — 2026-10-22
+- Accept / Decline / Maybe on an occurrence the organizer moved or renamed, in a repeating event
+  you already answered, answers that occurrence without asking about the series. Before,
+  **All** left the occurrence unanswered and it came back to Notifications. (#33)
+
 ### 0.1.20 — 2026-10-21
 - Notifications lists an invitation once. A calendar shared read-only into another signed-in
   account no longer adds a second copy, and Accept / Decline / Maybe appear only on calendars you

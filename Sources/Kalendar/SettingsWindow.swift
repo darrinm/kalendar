@@ -144,7 +144,8 @@ private struct GeneralSettings: View {
             Toggle("Play UI sounds", isOn: $prefs.playSounds)
             Toggle("Go to today after adding items", isOn: $prefs.goToTodayAfterAdding)
             Toggle("Show alerts", isOn: $prefs.showAlerts)
-            if prefs.showAlerts && !alerts.allowedBySystem {
+            Toggle("Notify about new invitations", isOn: $prefs.notifyInvitations)
+            if (prefs.showAlerts || prefs.notifyInvitations) && !alerts.allowedBySystem {
                 HStack {
                     Text("Alerts are off in System Settings")
                         .foregroundStyle(.secondary)

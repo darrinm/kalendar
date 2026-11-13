@@ -21,10 +21,11 @@ enum Theme {
     /// Tentative, overdue.
     static let wait = Color(light: 0xB7791F, dark: 0xF0B458)
     /// Declined, errors, the pending-invitation badge.
-    static let bad = Color(light: 0xC0392B, dark: 0xF87171)
+    static let bad = Color(nsColor: nsBad)
 
     static let nsBackground = NSColor(light: 0xF6F8FB, dark: 0x0B1119)
     static let nsAccent = NSColor(light: 0x00AAFF, dark: 0x33BBFF)
+    static let nsBad = NSColor(light: 0xC0392B, dark: 0xF87171)
 }
 
 extension NSColor {

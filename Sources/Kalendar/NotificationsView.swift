@@ -63,7 +63,7 @@ private struct InvitationRow: View {
     let event: EventInstance
     let model: PopoverModel
 
-    private var organizer: String? { event.attendees.first(where: \.organizer)?.email }
+    private var organizer: String? { event.organizer?.email }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

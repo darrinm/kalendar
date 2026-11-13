@@ -1,5 +1,6 @@
 // The menu bar item (§3, §12): a calendar glyph with today's day number, or the glyph alone, or
-// the next event's title, with an optional countdown. Left-click toggles the popover; right-click
+// the next event's title, with an optional countdown. A red badge on the glyph counts the
+// invitations awaiting a reply (§6.2). Left-click toggles the popover; right-click
 // (or ⌃-click) opens a small menu. A second item to its right, "Join Kate", shows while a video
 // meeting is in progress or starts within 15 minutes; clicking it opens the meeting link and hides it.
 import AppKit
@@ -18,6 +19,8 @@ final class StatusItemController: NSObject {
     var nextEvent: () -> EventInstance? = { nil }
     /// The event to offer Join for (`ConferenceDetector.joinCandidate`).
     var joinEvent: () -> EventInstance? = { nil }
+    /// Invitations awaiting a reply, for the badge.
+    var invitationCount = 0 { didSet { if invitationCount != oldValue { redraw() } } }
     /// The user's lowercased first names, which the Join item's label leaves out.
     var selfNames: () -> Set<String> = { [] }
     /// The event whose link the Join item last opened. Its Join item stays hidden. A duplicate key,
@@ -75,8 +78,10 @@ final class StatusItemController: NSObject {
         let showsNext = Self.showsNext
         let now = Date()
         let day = Calendar.current.component(.day, from: now)
-        button.image = Self.glyph(day: prefs.iconStyle == .iconOnly ? nil : day, color: prefs.colorIcon)
+        button.image = Self.glyph(day: prefs.iconStyle == .iconOnly ? nil : day, color: prefs.colorIcon,
+                                  badge: invitationCount)
         var label = "Kalendar, \(now.formatted(date: .complete, time: .omitted))"
+        if invitationCount > 0 { label += ", \(invitationCount) invitation\(invitationCount == 1 ? "" : "s")" }
         if showsNext, let next = nextEvent() {
             let text = Self.title(for: next, countdown: prefs.iconStyle == .nextCountdown, now: now)
             button.title = " " + text
@@ -140,13 +145,16 @@ final class StatusItemController: NSObject {
 
     /// An outlined calendar page with a solid header bar and the day number (none for "Icon only").
     /// A template image, so the menu bar tints it, unless "Use color icon" draws the header in the
-    /// accent.
-    static func glyph(day: Int?, color: Bool = false) -> NSImage {
-        let size = NSSize(width: 18, height: 16)
-        // a template is tinted by the menu bar; a color icon draws its outline in the label color
-        let ink: NSColor = color ? .labelColor : .black
+    /// accent or `badge` is above 0. A badge is a red circle with the count over the top-right corner.
+    static func glyph(day: Int?, color: Bool = false, badge: Int = 0) -> NSImage {
+        // the badge widens the image so the circle can extend past the page's right edge
+        let badgeWidth: CGFloat = badge > 0 ? 6 : 0
+        let size = NSSize(width: 18 + badgeWidth, height: 16)
+        // a template is tinted by the menu bar; a color image draws its outline in the label color
+        let template = !color && badge == 0
+        let ink: NSColor = template ? .black : .labelColor
         let image = NSImage(size: size, flipped: false) { rect in
-            let page = rect.insetBy(dx: 1, dy: 0.75)
+            let page = NSRect(x: 1, y: 0.75, width: 16, height: rect.height - 1.5)
             let outline = NSBezierPath(roundedRect: page, xRadius: 3, yRadius: 3)
             outline.lineWidth = 1.25
             ink.setStroke()
@@ -154,23 +162,41 @@ final class StatusItemController: NSObject {
             // header bar along the top edge
             NSGraphicsContext.saveGraphicsState()
             outline.addClip()
-            (color ? Theme.nsAccent : NSColor.black).setFill()
+            (color ? Theme.nsAccent : ink).setFill()
             NSRect(x: page.minX, y: page.maxY - 3.5, width: page.width, height: 3.5).fill()
             NSGraphicsContext.restoreGraphicsState()
 
-            guard let day else { return true }
-            let text = "\(day)" as NSString
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9.5, weight: .semibold),
-                .foregroundColor: ink,
-            ]
-            let textSize = text.size(withAttributes: attrs)
-            let body = NSRect(x: page.minX, y: page.minY, width: page.width, height: page.height - 3.5)
-            text.draw(at: NSPoint(x: body.midX - textSize.width / 2, y: body.midY - textSize.height / 2 - 0.25),
-                      withAttributes: attrs)
+            if let day {
+                let text = "\(day)" as NSString
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 9.5, weight: .semibold),
+                    .foregroundColor: ink,
+                ]
+                let textSize = text.size(withAttributes: attrs)
+                let body = NSRect(x: page.minX, y: page.minY, width: page.width, height: page.height - 3.5)
+                text.draw(at: NSPoint(x: body.midX - textSize.width / 2, y: body.midY - textSize.height / 2 - 0.25),
+                          withAttributes: attrs)
+            }
+            if badge > 0 { drawBadge(badge, topRight: NSPoint(x: rect.maxX, y: rect.maxY)) }
             return true
         }
-        image.isTemplate = !color
+        image.isTemplate = template
         return image
+    }
+
+    /// A red circle with a white count, "9+" above 9, its top-right corner at `topRight`.
+    private static func drawBadge(_ count: Int, topRight: NSPoint) {
+        let text = (count > 9 ? "9+" : "\(count)") as NSString
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 7, weight: .bold),
+            .foregroundColor: NSColor.white,
+        ]
+        let textSize = text.size(withAttributes: attrs)
+        let height: CGFloat = 9
+        let width = max(height, textSize.width + 3)
+        let circle = NSRect(x: topRight.x - width, y: topRight.y - height, width: width, height: height)
+        Theme.nsBad.setFill()
+        NSBezierPath(roundedRect: circle, xRadius: height / 2, yRadius: height / 2).fill()
+        text.draw(at: NSPoint(x: circle.midX - textSize.width / 2, y: circle.midY - textSize.height / 2), withAttributes: attrs)
     }
 }

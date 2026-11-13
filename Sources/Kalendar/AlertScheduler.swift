@@ -1,5 +1,6 @@
 // Event alerts (§19) through UNUserNotificationCenter: the next 24 hours of popup reminders,
-// rescheduled after the cache changes, at midnight and on wake.
+// rescheduled after the cache changes, at midnight and on wake. Also one notification per new
+// invitation, with Accept / Maybe / Decline (§6.2).
 import AppKit
 import KalendarCore
 import Observation
@@ -15,14 +16,26 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored private let center = UNUserNotificationCenter.current()
     /// Clicking an alert opens that event's detail popover.
     @ObservationIgnored var openEvent: (EventInstance) -> Void = { _ in }
+    /// Accept / Maybe / Decline on an invitation notification: the event and the response.
+    @ObservationIgnored var respond: (EventInstance, String) -> Void = { _, _ in }
+    /// The number of invitations awaiting a reply, after each cache change: the menu bar badge.
+    @ObservationIgnored var invitationCountChanged: (Int) -> Void = { _ in }
+    /// The pending invitations' notification identifiers at the last update.
+    @ObservationIgnored private var pendingInvitationIDs: Set<String>?
     @ObservationIgnored private var pendingReschedule: Task<Void, Never>?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     static let category = "event"
     static let joinCategory = "eventWithJoin"
+    static let invitationCategory = "invitation"
     static let snoozePrefix = "snooze|"
+    static let invitationPrefix = "invitation|"
     private static let joinAction = "join"
     private static let snoozeAction = "snooze"
+    /// Invitation actions: the response each writes, which is also its identifier, and its title.
+    private static let responseActions = [("accepted", "Accept"), ("tentative", "Maybe"), ("declined", "Decline")]
+    /// `InvitationNotices.Plan.seen`. "v2": keys with the time they were last pending.
+    private static let seenInvitationsKey = "seenInvitations.v2"
 
     static var enabled: Bool { Preferences.shared.showAlerts }
 
@@ -35,6 +48,9 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.category, actions: [snooze], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.joinCategory, actions: [join, snooze], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.invitationCategory, actions: Self.responseActions.map { id, title in
+                UNNotificationAction(identifier: id, title: title, options: id == "declined" ? [.destructive] : [])
+            }, intentIdentifiers: []),
         ])
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
@@ -64,8 +80,9 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
         Log.shell.info("notification permission: \(status.rawValue)")
     }
 
-    /// Coalesces the bursts of cache changes a sync makes into one reschedule. A reschedule waits for
-    /// the one already running, so two never interleave their removals and additions.
+    /// Coalesces the bursts of cache changes a sync makes into one reschedule and one invitation
+    /// update. A reschedule waits for the one already running, so two never interleave their removals
+    /// and additions.
     func setNeedsReschedule() {
         let previous = pendingReschedule
         previous?.cancel()
@@ -73,6 +90,7 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
             await previous?.value
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled else { return }
+            updateInvitations()
             await reschedule()
         }
     }
@@ -118,8 +136,66 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
         c.body = [time, place].compactMap { $0 }.joined(separator: " · ")
         c.sound = .default
         c.categoryIdentifier = event.conferenceURL == nil ? category : joinCategory
-        c.userInfo = ["account": event.account, "calendarId": event.calendarId, "eventId": event.id,
-                      "end": event.end.timeIntervalSince1970, "url": event.conferenceURL ?? ""]
+        c.userInfo = userInfo(for: event).merging(["url": event.conferenceURL ?? ""]) { $1 }
+        return c
+    }
+
+    /// What `didReceive` and `removeEndedAlerts` read back from a notification.
+    private static func userInfo(for event: EventInstance) -> [String: Any] {
+        ["account": event.account, "calendarId": event.calendarId, "eventId": event.id,
+         "end": event.end.timeIntervalSince1970]
+    }
+
+    // MARK: Invitations
+
+    /// After the cache changes: reports the count for the badge, posts a notification for each
+    /// invitation not seen before, and removes the notifications of invitations no longer pending.
+    private func updateInvitations() {
+        let pending = (try? cache.pendingInvitations(now: Date())) ?? []
+        invitationCountChanged(pending.count)
+        let defaults = UserDefaults.standard
+        let stored = defaults.dictionary(forKey: Self.seenInvitationsKey) as? [String: [String: Date]] ?? [:]
+        let plan = InvitationNotices.plan(pending: pending, seen: stored,
+                                          synced: (try? cache.invitationAccountsSynced()) ?? [], now: Date())
+        if plan.seen != stored { defaults.set(plan.seen, forKey: Self.seenInvitationsKey) }
+        let ids = Set(pending.map(Self.invitationIdentifier))
+        // a notification goes stale only when its invitation leaves the pending set
+        if pendingInvitationIDs.map({ !$0.isSubset(of: ids) }) ?? true { removeAnsweredInvitations(pending: ids) }
+        pendingInvitationIDs = ids
+        guard Preferences.shared.notifyInvitations else { return }
+        for event in plan.announce {
+            let request = UNNotificationRequest(identifier: Self.invitationIdentifier(event),
+                                                content: Self.invitationContent(for: event), trigger: nil)
+            center.add(request) { error in
+                if let error { Log.shell.error("invitation notification not posted: \(error.localizedDescription)") }
+            }
+        }
+        if !plan.announce.isEmpty { Log.shell.info("invitations: \(plan.announce.count) announced") }
+    }
+
+    private static func invitationIdentifier(_ event: EventInstance) -> String { invitationPrefix + event.seriesKey }
+
+    /// Removes the delivered notifications of invitations no longer pending: answered, cancelled,
+    /// ended, or on a hidden calendar or a signed-out account. `pending` holds notification identifiers.
+    private func removeAnsweredInvitations(pending: Set<String>) {
+        Task {
+            let stale = await center.deliveredNotifications().map(\.request.identifier)
+                .filter { $0.hasPrefix(Self.invitationPrefix) && !pending.contains($0) }
+            if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
+        }
+    }
+
+    /// Title: the event's title. Body: "Invitation from kate@example.com" and
+    /// "Monday, November 16 at 10:30 AM".
+    static func invitationContent(for event: EventInstance) -> UNMutableNotificationContent {
+        let c = UNMutableNotificationContent()
+        c.title = event.summary
+        let from = event.organizer.map { "Invitation from \($0.displayName ?? $0.email)" } ?? "Invitation"
+        let day = Date.FormatStyle.dateTime.weekday(.wide).month(.wide).day()
+        c.body = from + "\n" + event.start.formatted(event.allDay ? day : day.hour().minute())
+        c.sound = .default
+        c.categoryIdentifier = invitationCategory
+        c.userInfo = userInfo(for: event)
         return c
     }
 
@@ -151,6 +227,10 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
         let content = request.content
         let identifier = request.identifier
         await MainActor.run {
+            func event() -> EventInstance? {
+                guard let account, let calendarId, let eventId else { return nil }
+                return try? cache.event(account: account, calendarId: calendarId, id: eventId)
+            }
             switch action {
             case Self.joinAction:
                 if let url { Meeting.join(url) }
@@ -158,11 +238,10 @@ final class AlertScheduler: NSObject, UNUserNotificationCenterDelegate {
                 let base = identifier.hasPrefix(Self.snoozePrefix) ? identifier : Self.snoozePrefix + identifier
                 center.add(UNNotificationRequest(identifier: base, content: content,
                                                  trigger: UNTimeIntervalNotificationTrigger(timeInterval: 300, repeats: false)))
+            case let answer where Self.responseActions.contains { $0.0 == answer }:
+                if let event = event() { respond(event, answer) }
             case UNNotificationDefaultActionIdentifier:
-                if let account, let calendarId, let eventId,
-                   let event = try? cache.event(account: account, calendarId: calendarId, id: eventId) {
-                    openEvent(event)
-                }
+                if let event = event() { openEvent(event) }
             default:
                 break
             }

@@ -223,6 +223,39 @@ final class EventWriterTests: XCTestCase {
                        ["accepted", "accepted"])
     }
 
+    /// A series is listed at its next occurrence, not one that ended earlier in the week; a one-off
+    /// that ended stays listed.
+    func testASeriesIsListedAtItsNextOccurrence() async throws {
+        let me = Attendee(email: "me@example.com", displayName: nil, isSelf: true, organizer: false, optional: false, responseStatus: "needsAction")
+        let ended = event(id: "s_1", attendees: [me], organizer: false, series: "s")   // ended at 16:30
+        var next = event(id: "s_2", attendees: [me], organizer: false, series: "s")
+        next.start += 7 * 86400
+        next.end += 7 * 86400
+        let oneOff = event(id: "o", attendees: [me], organizer: false)
+        try cache.upsert([ended, next, oneOff])
+        XCTAssertEqual(try cache.pendingInvitations(now: now).map(\.id), ["o", "s_2"])
+    }
+
+    /// An account counts as synced once every calendar `pendingInvitations` reads has synced; a
+    /// hidden or read-only calendar does not hold it back.
+    func testInvitationAccountsSynced() throws {
+        func calendar(_ id: String, role: String = "owner", selected: Bool = true) -> CalendarInfo {
+            CalendarInfo(account: "me@example.com", id: id, summary: id, backgroundColor: "#000000",
+                         accessRole: role, selected: selected, primary: id == "primary")
+        }
+        try cache.replaceCalendars([calendar("primary"), calendar("team"), calendar("hidden", selected: false),
+                                    calendar("shared", role: "reader")], account: "me@example.com")
+        XCTAssertEqual(try cache.invitationAccountsSynced(), [])
+        var primary = calendar("primary")
+        primary.windowStart = now
+        try cache.saveCalendar(primary)
+        XCTAssertEqual(try cache.invitationAccountsSynced(), [], "team has not synced")
+        var team = calendar("team")
+        team.windowStart = now
+        try cache.saveCalendar(team)
+        XCTAssertEqual(try cache.invitationAccountsSynced(), ["me@example.com"])
+    }
+
     /// Another account that subscribes to the calendar read-only also has a copy where Google marks
     /// the user as `self`. Google refuses a reply through it, so only the writable copy is listed.
     func testInvitationOnAReadOnlyCopyIsNotListed() async throws {

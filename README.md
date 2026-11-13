@@ -18,7 +18,8 @@ them in System Settings › Internet Accounts, or both apps will deliver alerts.
 ## Features
 
 - **Menu bar icon** shows the date, an icon, the next event's title, or the next event with a
-  countdown. Left-click or **⌃⌥Space** (configurable) opens the Mini Window.
+  countdown. Left-click or **⌃⌥Space** (configurable) opens the Mini Window. A red badge counts
+  the invitations waiting for a reply.
 - **Mini Window:** a natural-language input field, a month grid with a dot per event, and an
   agenda list sectioned by day. Tasks appear on their due day. Unanswered invitations have a gray
   title.
@@ -39,7 +40,7 @@ them in System Settings › Internet Accounts, or both apps will deliver alerts.
   list's order, with subtasks indented.
 - **Search** (⌘F) by title, location, invitees, or all fields, over the past and next year.
 - **Alerts:** Kalendar delivers its own notifications for events' popup reminders, with Join and
-  Snooze 5 Minutes actions.
+  Snooze 5 Minutes actions. A new invitation gets a notification with Accept, Maybe and Decline.
 - **Guest emails:** before changing or deleting an event you organize, Kalendar asks whether to
   email the guests, as Google Calendar does.
 - **Multiple accounts**, offline reading from a local cache, and incremental sync.
@@ -47,6 +48,12 @@ them in System Settings › Internet Accounts, or both apps will deliver alerts.
 The full behavior is specified in [docs/SPEC.md](docs/SPEC.md).
 
 ## What's new
+
+### 0.1.22 — 2026-11-13
+- A new invitation shows a notification with the title, who sent it and when, and **Accept /
+  Maybe / Decline** buttons. Clicking it opens the event. **Notify about new invitations**
+  (Settings › General) turns it off. (#34)
+- The menu bar icon shows a red badge with the number of invitations waiting for a reply. (#34)
 
 ### 0.1.21 — 2026-10-22
 - Accept / Decline / Maybe on an occurrence the organizer moved or renamed, in a repeating event

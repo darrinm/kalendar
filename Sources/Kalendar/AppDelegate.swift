@@ -54,6 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             agenda.select(event.start)
             model.openEvent(event, anchor: nil)
         }
+        alerts.respond = { event, response in model.respond(event, response) }
+        alerts.invitationCountChanged = { [weak self] in self?.statusItem?.invitationCount = $0 }
         // with an account, the reschedule follows the permission answer
         if accounts.accounts.isEmpty { alerts.setNeedsReschedule() } else { alerts.requestPermission() }
         popover.onOpen = { [weak self] in self?.syncIfNeeded(maxAge: 30) }

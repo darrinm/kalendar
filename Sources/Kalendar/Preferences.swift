@@ -71,6 +71,8 @@ final class Preferences {
     var playSounds: Bool { didSet { save(playSounds, "playSounds") } }
     var goToTodayAfterAdding: Bool { didSet { save(goToTodayAfterAdding, "goToTodayAfterAdding") } }
     var showAlerts: Bool { didSet { save(showAlerts, "showAlerts") } }
+    /// A notification when a new invitation arrives (§6.2).
+    var notifyInvitations: Bool { didSet { save(notifyInvitations, "notifyInvitations") } }
     var defaultVideo: Video { didSet { save(defaultVideo.rawValue, "defaultVideo") } }
     /// What a new event starts with: the default, except None while Zoom isn't connected.
     var newEventVideo: Video { defaultVideo == .zoom && !Zoom.account.isConnected ? .none : defaultVideo }
@@ -114,6 +116,7 @@ final class Preferences {
         playSounds = value("playSounds", true)
         goToTodayAfterAdding = value("goToTodayAfterAdding", true)
         showAlerts = value("showAlerts", true)
+        notifyInvitations = value("notifyInvitations", true)
         defaultVideo = Video(rawValue: value("defaultVideo", "")) ?? .none
         zoomInBrowser = value("zoomInBrowser", false)
         iconStyle = IconStyle(rawValue: value("iconStyle", "")) ?? .date

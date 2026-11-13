@@ -133,6 +133,10 @@ public struct EventInstance: Codable, Equatable, Hashable, FetchableRecord, Pers
     private static let titleSeparator = #/\s*(?:/|<>|&|\|)\s*|\s+[xX]\s+/#
     /// An invitation the user hasn't answered (not Maybe either): its title is grayed (§4.3).
     public var isUnanswered: Bool { isInvitation && selfResponse == "needsAction" }
+    /// One key for a whole series, or for a one-off event: `account|recurringEventId ?? id`.
+    public var seriesKey: String { "\(account)|\(recurringEventId ?? id)" }
+    /// The attendee who organizes the event; nil when it has no attendees.
+    public var organizer: Attendee? { attendees.first(where: \.organizer) }
     /// Answered Maybe.
     public var isMaybe: Bool { selfResponse == "tentative" }
 }

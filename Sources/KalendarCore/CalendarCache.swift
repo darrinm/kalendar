@@ -384,14 +384,29 @@ public final class CalendarCache: @unchecked Sendable {
             try EventInstance.fetchAll(db, sql: """
                 SELECT event.* FROM event JOIN calendar
                   ON calendar.account = event.account AND calendar.id = event.calendarId
-                WHERE calendar.selected AND calendar.accessRole IN ('owner', 'writer')  -- CalendarInfo.isWritable
+                WHERE \(Self.invitationCalendars)
                   AND event.selfResponse = 'needsAction' AND NOT event.organizerSelf
                   AND event.end > ? AND event.start < ?
                 ORDER BY event.start
                 """, arguments: [from, to])
         }
+        // a series is listed at its first occurrence that hasn't ended, or its first one if all have
+        let ordered = rows.filter { $0.end > now } + rows.filter { $0.end <= now }
         var seen = Set<String>()
-        return rows.filter { seen.insert("\($0.account)|\($0.recurringEventId ?? $0.id)").inserted }
+        return ordered.filter { seen.insert($0.seriesKey).inserted }.sorted { $0.start < $1.start }
+    }
+
+    /// The calendars `pendingInvitations` reads: shown and writable (`CalendarInfo.isWritable`).
+    private static let invitationCalendars = "calendar.selected AND calendar.accessRole IN ('owner', 'writer')"
+
+    /// The accounts whose `pendingInvitations` calendars have all synced at least once.
+    public func invitationAccountsSynced() throws -> Set<String> {
+        try db.read { db in
+            Set(try String.fetchAll(db, sql: """
+                SELECT account FROM calendar WHERE \(Self.invitationCalendars)
+                GROUP BY account HAVING COUNT(windowStart) = COUNT(*)
+                """))
+        }
     }
 
     // MARK: Contacts (§18.4)

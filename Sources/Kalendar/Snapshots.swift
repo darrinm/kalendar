@@ -46,8 +46,10 @@ enum Snapshots {
         }
         for (name, image) in [("date", StatusItemController.glyph(day: 12)),
                               ("icon-only", StatusItemController.glyph(day: nil)),
-                              ("color", StatusItemController.glyph(day: 12, color: true))] {
-            let big = NSImage(size: NSSize(width: 72, height: 64), flipped: false) { rect in
+                              ("color", StatusItemController.glyph(day: 12, color: true)),
+                              ("badge", StatusItemController.glyph(day: 12, badge: 2)),
+                              ("badge-color", StatusItemController.glyph(day: 12, color: true, badge: 12))] {
+            let big = NSImage(size: NSSize(width: image.size.width * 4, height: image.size.height * 4), flipped: false) { rect in
                 image.draw(in: rect)
                 return true
             }
